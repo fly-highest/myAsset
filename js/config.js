@@ -1,0 +1,33 @@
+// 앱 공통 설정 — 자산군 7개(고정 순서), 허용값 등
+window.APP_CONFIG = {
+  GROUPS: [
+    { code: 'CASH', name: '현금성', color: '#7f97a8' },
+    { code: 'LEVERAGE', name: '레버리지', color: '#d9434f' },
+    { code: 'NASDAQ100', name: '나스닥1배', color: '#2f6fdf' },
+    { code: 'SP500', name: 'S&P500', color: '#17a589' },
+    { code: 'OTHER_STOCK', name: '기타종목', color: '#8e5cc4' },
+    { code: 'GOLD', name: '금', color: '#c9a227' },
+    { code: 'BLOCKCHAIN', name: '블록체인', color: '#ef7d22' }
+  ],
+  ASSET_TYPES: ['ETF', 'STOCK', 'CRYPTO', 'GOLD', 'CASH'],
+  CURRENCIES: ['KRW', 'USD'],
+  EXCHANGES: ['KRX', 'NASDAQ', 'NYSE', 'UPBIT', 'CASH'],
+  STORAGE_KEY: 'myAsset.mock.v1',
+  USER_ID: 'mock-user'
+};
+
+window.Groups = {
+  list: window.APP_CONFIG.GROUPS,
+  codes: window.APP_CONFIG.GROUPS.map(g => g.code),
+  name(code) { const g = this.list.find(x => x.code === code); return g ? g.name : code; },
+  color(code) { const g = this.list.find(x => x.code === code); return g ? g.color : '#999'; },
+  // NULL(미지정)은 기타종목으로 집계
+  of(inst) { return (inst && inst.asset_group) || 'OTHER_STOCK'; },
+  // 코드 또는 한글명 → 코드 (없으면 undefined)
+  parse(v) {
+    const s = String(v ?? '').trim();
+    if (!s) return null;
+    const g = this.list.find(x => x.code === s.toUpperCase() || x.name.toUpperCase() === s.toUpperCase());
+    return g ? g.code : undefined;
+  }
+};

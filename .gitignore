@@ -1,0 +1,7 @@
+# 비밀 값(토큰 등)이 들어가는 파일은 절대 GitHub에 올리지 않습니다
+.env
+.env.*
+*.local
+node_modules/
+.DS_Store
+Thumbs.db

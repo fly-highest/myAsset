@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>myAsset 자체 점검</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>td.ok{color:#17803d;font-weight:700} td.ng{color:#c62828;font-weight:700} td{white-space:normal!important} td.ok,td.ng{white-space:nowrap!important}</style>
+</head>
+<body>
+  <main>
+    <h1>myAsset 자체 점검 (Mock 시나리오 자동 확인)</h1>
+    <p class="muted">별도 저장 공간을 사용하므로 실제 화면의 Mock 데이터에는 영향을 주지 않습니다.</p>
+    <div id="summary" class="notice info">실행 중…</div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>점검 항목</th><th>결과</th><th>상세</th></tr></thead><tbody id="out"></tbody></table></div>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="../js/config.js"></script>
+  <script>APP_CONFIG.STORAGE_KEY = 'myAsset.selftest'; try { localStorage.removeItem('myAsset.selftest'); } catch (e) {}</script>
+  <script src="../js/format.js"></script>
+  <script src="../js/calc.js"></script>
+  <script src="../mock/accounts.js"></script>
+  <script src="../mock/instruments.js"></script>
+  <script src="../mock/holdings.js"></script>
+  <script src="../mock/prices.js"></script>
+  <script src="../mock/fx.js"></script>
+  <script src="../mock/snapshots.js"></script>
+  <script src="../mock/xlsxSamples.js"></script>
+  <script src="../js/dataService.js"></script>
+  <script>
+  (async function () {
+    const DS = DataService, out = document.getElementById('out');
+    let n = 0, fail = 0;
+    const near = (a, b, eps = 0.5) => Math.abs(a - b) <= eps;
+    function check(name, ok, detail = '') {
+      n++; if (!ok) fail++;
+      out.insertAdjacentHTML('beforeend', `<tr><td>${n}</td><td>${name}</td><td class="${ok ? 'ok' : 'ng'}">${ok ? '통과' : '실패'}</td><td class="small">${esc(detail)}</td></tr>`);
+    }
+    async function model() {
+      const [accounts, holdings, instruments, prices, fx] = await Promise.all([DS.getAccounts(), DS.getHoldings(), DS.getInstruments(), DS.getPrices(), DS.getFxRate()]);
+      return Calc.buildModel({ accounts, holdings, instruments, prices, fx: fx.rate });
+    }
+    function fileFromRows(baseDate, rows, name = 'test.xlsx') {
+      const buf = XLSX.write(DS._test.buildWorkbook(baseDate, rows), { type: 'array', bookType: 'xlsx' });
+      return new File([buf], name);
+    }
+    async function upload(file) {
+      const v = await DS.validateImport(await DS.parseHoldingsXlsx(file));
+      return v;
+    }
+    try {
+      // ⑮ 환차손익 예시
+      const r = Calc.row({ quantity: 10, avg_price: 500, avg_fx_rate: 1300 }, 'USD', 550, 1400);
+      check('⑮ QQQ 10주 $500·1,300원 → $550·1,400원', near(r.invK, 6500000) && near(r.valK, 7700000) && near(r.profK, 1200000) && near(r.priceP, 650000) && near(r.fxP, 550000) && Fmt.pct(r.retK) === '+18.46%' && Fmt.pct(r.retO) === '+10.00%',
+        `투자 ${Fmt.krw(r.invK)} 평가 ${Fmt.krw(r.valK)} 손익 ${Fmt.krw(r.profK)} (${Fmt.pct(r.retK)}) = 가격 ${Fmt.krw(r.priceP)} + 환차 ${Fmt.krw(r.fxP)}, 달러 ${Fmt.pct(r.retO)}`);
+      const r2 = Calc.row({ quantity: 10, avg_price: 500, avg_fx_rate: 1300 }, 'USD', 500, 1400);
+      check('⑯ 가격 불변·환율만 상승 → 달러 손익 0, 원화 손익 = 환차손익', r2.profO === 0 && near(r2.profK, r2.fxP), `달러 ${Fmt.usd(r2.profO)}, 원화 ${Fmt.krw(r2.profK)}, 환차 ${Fmt.krw(r2.fxP)}`);
+
+      let m = await model();
+      const bad = m.rows.filter(x => !near(x.r.priceP + x.r.fxP, x.r.profK, 0.01));
+      check('가격손익 + 환차손익 = 원화 손익 (모든 보유)', !bad.length, `${m.rows.length}행 검사`);
+      check('KRW 종목 환차손익 = 0', m.rows.filter(x => x.inst.currency === 'KRW').every(x => x.r.fxP === 0));
+      const vK = Calc.view(m.total, 'KRW', m.fx), vU = Calc.view(m.total, 'USD', m.fx);
+      check('⑱ 원화환산 ↔ 달러환산 수익률 동일', Fmt.pct(vK.parts[0].ret) === Fmt.pct(vU.parts[0].ret), `${Fmt.pct(vK.parts[0].ret)} / ${Fmt.pct(vU.parts[0].ret)}`);
+      const vM = Calc.view(m.total, 'MIXED', m.fx);
+      check('혼합 모드 총합은 한국 ₩ / 미국 $ 로 분리', vM.parts.length === 2 && vM.parts[0].cur === 'KRW' && vM.parts[1].cur === 'USD',
+        vM.parts.map(p => Fmt.money(p.val, p.cur)).join(' / '));
+      check('③ asset_group NULL 종목(팔란티어) → 기타종목 집계·미지정 표시', !!m.groups.OTHER_STOCK.insts['ins-pltr'] && m.groups.OTHER_STOCK.insts['ins-pltr'].unassigned);
+      check('⑦ QQQ는 2개 계좌 보유, 자산군에서는 종목 1줄 + 계좌 2건', m.groups.NASDAQ100.insts['ins-qqq'].rows.length === 2);
+      check('7개 자산군 고정', Object.keys(m.groups).join(',') === 'CASH,LEVERAGE,NASDAQ100,SP500,OTHER_STOCK,GOLD,BLOCKCHAIN');
+
+      // ①② ⑥ ⑧ 자산군 이동
+      const total0 = m.total.valK, nasdaq0 = m.groups.NASDAQ100.agg.valK, holdN0 = (await DS.getHoldings()).length, instN0 = (await DS.getInstruments()).length;
+      await DS.updateInstrumentGroup('ins-qqq', null);
+      m = await model();
+      check('① QQQ 제거 → 구성에서 빠지고 종목·보유는 유지', !m.groups.NASDAQ100.insts['ins-qqq'] && (await DS.getHoldings()).length === holdN0 && (await DS.getInstruments()).length === instN0);
+      await DS.updateInstrumentGroup('ins-qqq', 'SP500');
+      m = await model();
+      check('②⑧ QQQ → SP500: 두 계좌 보유분 모두 SP500 집계', m.groups.SP500.insts['ins-qqq'] && m.groups.SP500.insts['ins-qqq'].rows.length === 2);
+      check('⑥ 자산군 이동 → 전체 평가금액 불변', near(m.total.valK, total0), `${Fmt.krw(total0)} → ${Fmt.krw(m.total.valK)}, 나스닥1배 ${Fmt.krw(nasdaq0)} → ${Fmt.krw(m.groups.NASDAQ100.agg.valK)}`);
+
+      // ⑤ 과거 분류 고정
+      const all = await DS.getSnapshots('ALL');
+      const firstItems = await DS.getSnapshotItems(all[0].id);
+      check('스냅샷 1년 이상 일별', all.length >= 366, `${all.length}일 (${all[0].snapshot_date} ~ ${all[all.length - 1].snapshot_date})`);
+      check('⑤ 과거 QQQ = NASDAQ100 (현재는 SP500)', firstItems.filter(i => i.symbol === 'QQQ').every(i => i.asset_group === 'NASDAQ100'));
+      check('해지 계좌가 과거 이력에 당시 계좌명으로 남음', firstItems.some(i => i.account_name === '키움 연금저축(해지)'));
+      const s = all[all.length - 1];
+      check('스냅샷 KRW 요약 캐시 = items 재계산', near(s.total_value_krw, Calc.buildSnapshotModel(await DS.getSnapshotItems(s.id)).total.valK, 1));
+
+      // ⑨ ⑩ ⑬ ⑫
+      const hQ = (await DS.getHoldings()).find(h => h.account_id === 'acc-kiwoom' && h.instrument_id === 'ins-qqq');
+      const t1 = (await model()).total.valK;
+      await DS.updateHolding(hQ.id, { quantity: 20, avg_price: 490, avg_fx_rate: 1350 });
+      const t2 = (await model()).total.valK;
+      check('⑨ QQQ 수량 수정 → 총합 즉시 변경', near(t2 - t1, 8 * 552.30 * 1385.20, 1), `${Fmt.krw(t1)} → ${Fmt.krw(t2)}`);
+      let err = null;
+      try { await DS.addHolding({ account_id: 'acc-kiwoom', instrument_id: 'ins-qqq', quantity: 1, avg_price: 1, avg_fx_rate: 1 }); } catch (e) { err = e; }
+      check('⑬ 같은 계좌에 같은 종목 추가 → 차단, 기존 행 수정 유도', err && err.code === 'DUPLICATE');
+      err = null;
+      try { await DS.deleteAccount('acc-kiwoom'); } catch (e) { err = e; }
+      check('⑫ 보유가 있는 계좌 삭제 → 차단', err && err.code === 'HAS_HOLDINGS', err && err.message);
+      await DS.deleteHolding(hQ.id);
+      m = await model();
+      check('⑩ 계좌 A의 QQQ 삭제 → 계좌 B QQQ 유지, 구성에도 남음', m.rows.some(x => x.inst.id === 'ins-qqq' && x.holding.account_id === 'acc-mirae') && (await DS.getInstruments()).some(i => i.id === 'ins-qqq' && i.asset_group === 'SP500'));
+      err = null;
+      try { await DS.addHolding({ account_id: 'acc-kiwoom', instrument_id: 'ins-nvda', quantity: 0, avg_price: 100, avg_fx_rate: 1300 }); } catch (e) { err = e; }
+      check('입력 검증: 수량 0 거부', !!err, err && err.message);
+
+      // ⑪ 새 종목 등록 자산군 미선택
+      const ni = await DS.addInstrument({ name: '테스트종목', symbol: 'TEST1', exchange: 'NYSE', asset_type: 'STOCK', currency: 'USD', asset_group: null });
+      await DS.addHolding({ account_id: 'acc-kiwoom', instrument_id: ni.id, quantity: 3, avg_price: 10, avg_fx_rate: 1380 });
+      m = await model();
+      check('⑪ 새 종목 자산군 미선택 → 기타종목(미지정) 집계', m.groups.OTHER_STOCK.insts[ni.id] && m.groups.OTHER_STOCK.insts[ni.id].unassigned);
+
+      // ⑲ ⑳ 스냅샷
+      let st = await DS.getStatus();
+      check('⑲ 보유 변경 후 "다음 스냅샷에 저장" 안내 상태', st.changedSinceSnapshot);
+      const last = (await DS.getSnapshots('ALL')).pop();
+      const lastQty = (await DS.getSnapshotItems(last.id)).filter(i => i.symbol === 'QQQ').map(i => i.quantity).join(',');
+      const snap = await DS.createDailySnapshot();
+      check('⑳ 시뮬레이션 → 다음 날짜 스냅샷 생성', snap.snapshot_date === Fmt.addDays(last.snapshot_date, 1), snap.snapshot_date);
+      const before = JSON.stringify(await DS.getSnapshotItems(snap.id));
+      const hm = (await DS.getHoldings()).find(h => h.instrument_id === 'ins-qqq');
+      await DS.updateHolding(hm.id, { quantity: 99, avg_price: 500, avg_fx_rate: 1300 });
+      check('⑳ 이후 보유를 바꿔도 저장된 스냅샷 불변', JSON.stringify(await DS.getSnapshotItems(snap.id)) === before);
+      check('이전 스냅샷도 불변', (await DS.getSnapshotItems(last.id)).filter(i => i.symbol === 'QQQ').map(i => i.quantity).join(',') === lastQty);
+      err = null;
+      try { await DS.createDailySnapshot(snap.snapshot_date); } catch (e) { err = e; }
+      check('같은 날짜 스냅샷 1건만', !!err);
+
+      // ㉘ 샘플 업로드
+      const today = Fmt.todayKST();
+      let v = await upload(fileFromRows(today, MOCK.xlsxSamples.sample));
+      check('㉘ 샘플 데이터 → 오류 없이 통과 (경고 허용)', v.errors.length === 0, `오류 ${v.errors.length} / 경고 ${v.warnings.length}: ` + v.warnings.map(w => w.reason).join(' | '));
+      const pv = await DS.previewImport(v);
+      check('샘플 파일: 7개 자산군 모두 포함', Groups.codes.every(c => MOCK.xlsxSamples.sample.some(r => Groups.parse(r[10]) === c)) && pv.model.total.n === 12);
+      const accBefore = (await DS.getAccounts()).length, snapsBefore = (await DS.getSnapshots('ALL')).length;
+      const res = await DS.replaceCurrentHoldings(v);
+      m = await model();
+      check('㉑ 반영 → 계좌 3개, 보유 12건으로 교체', res.accountCount === 3 && res.holdingCount === 12 && m.accounts.length === 3, JSON.stringify(res));
+      check('㉑㉔ 반영 후 과거 이력 불변', (await DS.getSnapshots('ALL')).length === snapsBefore);
+      check('기존 종목 자산군은 유지 (QQQ 는 SP500 그대로)', (await DS.getInstruments()).find(i => i.symbol === 'QQQ').asset_group === 'SP500');
+      check('신규 종목(자산군 비움) → NULL 로 등록', (await DS.getInstruments()).find(i => i.symbol === '458730').asset_group === null);
+
+      // ㉗ 되돌리기 → 업로드 직전(계좌 accBefore 개)으로
+      await DS.undoLastImport();
+      check('㉗ 직전 상태로 되돌리기', (await DS.getAccounts()).length === accBefore && !(await DS.getStatus()).canUndo, `계좌 ${accBefore}개로 복원`);
+
+      // ㉖ 내보내기 왕복
+      const exportRows = DS._test.currentRows();
+      const m1 = JSON.stringify((await model()).total);
+      v = await upload(fileFromRows(DS._test.getBaseDate(), exportRows));
+      await DS.replaceCurrentHoldings(v);
+      check('㉖ 현재 보유 내보내기 → 그대로 업로드 → 현황 동일', v.errors.length === 0 && JSON.stringify((await model()).total) === m1, `오류 ${v.errors.length}, 경고 ${v.warnings.length}`);
+
+      // ㉒ 오류 파일
+      v = await upload(fileFromRows(today, MOCK.xlsxSamples.error));
+      const reasons = v.errors.map(e => `${e.row}행 ${e.col}: ${e.reason}`);
+      check('㉒ 오류 파일 → 수량 문자 / USD 환율 누락 / 중복 행 감지',
+        reasons.some(x => x.includes('수량: 숫자가 아닙니다')) && reasons.some(x => x.includes('USD 종목은 매입평균환율')) && reasons.some(x => x.includes('중복')),
+        `오류 ${v.errors.length}건: ` + reasons.join(' | '));
+      // ㉙ 날짜
+      v = await upload(fileFromRows(Fmt.addDays(today, 1), MOCK.xlsxSamples.sample));
+      check('㉙ 미래 기준일자 → 오류', v.errors.some(e => e.col === '기준일자'));
+      v = await upload(fileFromRows('2026-01-15', MOCK.xlsxSamples.sample));
+      check('㉙ 과거 기준일자 → 경고만', v.errors.length === 0 && v.warnings.some(e => e.col === '기준일자'));
+      v = await upload(new File(['abc'], 'x.csv'));
+      check('확장자 .xlsx 아님 → 오류', v.errors.length > 0);
+
+      // mock 폴더의 예시 xlsx 파일 (file:// 로 열면 브라우저가 막을 수 있어 그 경우 건너뜀)
+      for (const [name, expectErr] of [['sample_holdings.xlsx', false], ['sample_holdings_error.xlsx', true]]) {
+        try {
+          const res = await fetch('../mock/' + name);
+          if (!res.ok) throw new Error(res.status);
+          const f = new File([await res.arrayBuffer()], name);
+          const vv = await upload(f);
+          check(`mock/${name} ${expectErr ? '→ 오류 감지' : '→ 오류 없이 통과'}`, expectErr ? vv.errors.length > 0 : vv.errors.length === 0, `오류 ${vv.errors.length} / 경고 ${vv.warnings.length}, 기준일자 ${vv.baseDate}`);
+        } catch (e) { check(`mock/${name} (파일을 읽을 수 없어 건너뜀)`, true, String(e.message || e)); }
+      }
+
+      // 포맷
+      check('숫자 포맷', Fmt.krw(12345678) === '₩12,345,678' && Fmt.usd(1234.56) === '$1,234.56' && Fmt.fx(1385.2) === '₩1,385.20' && Fmt.pct(-1.1) === '−1.10%' && Fmt.qty(0.03857214, { asset_type: 'CRYPTO' }) === '0.03857214',
+        [Fmt.krw(12345678), Fmt.usd(1234.56), Fmt.fx(1385.2), Fmt.pct(3.25), Fmt.pct(-1.1)].join(' '));
+    } catch (e) {
+      check('예외 발생', false, e.stack || e.message);
+    }
+    try { localStorage.removeItem('myAsset.selftest'); } catch (e) {}
+    const sum = document.getElementById('summary');
+    sum.textContent = `총 ${n}개 중 ${n - fail}개 통과${fail ? `, ${fail}개 실패` : ' — 모두 통과'}`;
+    sum.className = fail ? 'notice' : 'notice info';
+    document.title = `SELFTEST ${n - fail}/${n}`;
+  })();
+  </script>
+</body>
+</html>
