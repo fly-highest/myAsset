@@ -25,6 +25,7 @@
   <script src="../mock/fx.js"></script>
   <script src="../mock/snapshots.js"></script>
   <script src="../mock/xlsxSamples.js"></script>
+  <script src="../mock/catalog.js"></script>
   <script src="../js/dataService.js"></script>
   <script>
   (async function () {
@@ -180,6 +181,17 @@
           check(`mock/${name} ${expectErr ? '→ 오류 감지' : '→ 오류 없이 통과'}`, expectErr ? vv.errors.length > 0 : vv.errors.length === 0, `오류 ${vv.errors.length} / 경고 ${vv.warnings.length}, 기준일자 ${vv.baseDate}`);
         } catch (e) { check(`mock/${name} (파일을 읽을 수 없어 건너뜀)`, true, String(e.message || e)); }
       }
+
+      // 외부 종목 목록 검색·등록
+      let found = await DS.searchCatalog('애플');
+      check('외부 종목 목록 검색 (등록 전 종목도 나옴)', found.some(x => x.symbol === 'AAPL' && !x.registered), found.map(x => x.name + (x.registered ? '(등록)' : '(외부)')).join(', '));
+      const aapl = await DS.ensureInstrument(found.find(x => x.symbol === 'AAPL'));
+      found = await DS.searchCatalog('AAPL');
+      check('외부 목록 종목 선택 → 종목 마스터 등록 (중복 없이)', aapl.id && aapl.asset_group === null && found.length === 1 && found[0].registered);
+      const rp = (await DS.searchCatalog('RP')).find(x => x.symbol === 'RP-USD');
+      check('달러 RP 는 현금성(USD) 항목', rp && rp.asset_type === 'CASH' && rp.currency === 'USD');
+      const ci = await DS.getCatalogInfo();
+      check('다음 갱신 = 마지막 갱신 + 1개월', new Date(ci.nextSyncAt).getMonth() === (new Date(ci.syncedAt).getMonth() + 1) % 12, `${ci.syncedAt} → ${ci.nextSyncAt}`);
 
       // 포맷
       check('숫자 포맷', Fmt.krw(12345678) === '₩12,345,678' && Fmt.usd(1234.56) === '$1,234.56' && Fmt.fx(1385.2) === '₩1,385.20' && Fmt.pct(-1.1) === '−1.10%' && Fmt.qty(0.03857214, { asset_type: 'CRYPTO' }) === '0.03857214',

@@ -112,6 +112,45 @@ window.DataService = (function () {
     commit();
     return clone(inst);
   }
+  // ---------------------------------------------------------------
+  // 외부 종목 목록 (catalog) — 한 달에 한 번 외부에서 받아와 DB 에 저장, 검색은 저장된 목록을 조회
+  // (Mock: mock/catalog.js 를 '저장된 목록'으로 사용. 실제 연동 시 월 1회 Edge Function + Cron 으로 갱신)
+  // ---------------------------------------------------------------
+  const catalogKey = x => instKey(x.symbol, x.exchange);
+  function catalogFind(symbol, exchange) {
+    const k = instKey(symbol, exchange);
+    return MOCK.catalog.items.find(x => catalogKey(x) === k) || null;
+  }
+  async function getCatalogInfo() {
+    const syncedAt = state.meta.catalogSyncedAt || MOCK.catalog.synced_at;
+    const next = new Date(syncedAt);
+    next.setMonth(next.getMonth() + 1);
+    return { count: MOCK.catalog.items.length, syncedAt, nextSyncAt: next.toISOString() };
+  }
+  // Mock: 갱신 시각만 기록 (실제로는 외부 목록을 받아 DB 의 목록을 교체)
+  async function syncCatalog() {
+    state.meta.catalogSyncedAt = nowISO();
+    commit();
+    return getCatalogInfo();
+  }
+  // 종목 검색: 이미 등록된 종목(registered) + 외부 목록에만 있는 종목을 함께 돌려줍니다.
+  async function searchCatalog(q) {
+    const s = String(q || '').trim().toLowerCase();
+    const match = x => !s || [x.name, x.symbol, x.eng_name].some(v => String(v || '').toLowerCase().includes(s));
+    const regKeys = new Set(state.instruments.map(catalogKey));
+    const list = state.instruments.filter(match).map(i => ({ ...clone(i), registered: true }));
+    MOCK.catalog.items.filter(x => !regKeys.has(catalogKey(x)) && match(x))
+      .forEach(x => list.push({ ...x, id: null, asset_group: null, registered: false }));
+    return list;
+  }
+  // 검색 결과에서 고른 종목이 아직 등록 전이면 종목 마스터에 등록하고 돌려줍니다.
+  async function ensureInstrument(entry) {
+    if (entry.id) return clone(state.instruments.find(i => i.id === entry.id));
+    const found = state.instruments.find(i => catalogKey(i) === catalogKey(entry));
+    if (found) return clone(found);
+    return addInstrument({ ...entry, asset_group: null });
+  }
+
   // 자산군 매핑 변경 — instruments.asset_group UPDATE 만 합니다 (7항). group=null 이면 해제.
   async function updateInstrumentGroup(id, group) {
     const inst = state.instruments.find(x => x.id === id);
@@ -397,7 +436,7 @@ window.DataService = (function () {
       if (exchange === 'KRX' && /^\d{1,5}$/.test(symbol)) symbol = symbol.padStart(6, '0'); // 엑셀이 005930 → 5930 으로 바꾼 경우
       const key = instKey(symbol, exchange);
       const existing = instByKey[key];
-      const assetType = s('자산유형').toUpperCase();
+      let assetType = s('자산유형').toUpperCase();
       const groupRaw = s('자산군');
       let group = null;
       if (groupRaw) {
@@ -414,11 +453,13 @@ window.DataService = (function () {
           warn('자산군', `기존 종목은 현재 매핑(${existing.asset_group ? Groups.name(existing.asset_group) : '미지정'})을 유지합니다 — 입력값 무시`);
         if (s('종목명') && s('종목명') !== existing.name) warn('종목명', `종목 마스터 이름(${existing.name})과 다릅니다 — 마스터 이름 사용`);
       } else if (symbol && exchange) {
+        const cat = catalogFind(symbol, exchange);
+        if (!assetType && cat) assetType = cat.asset_type; // 외부 종목 목록에 있으면 자산유형을 채움
         if (!assetType) err('자산유형', '신규 종목은 자산유형이 필요합니다');
         else if (!APP_CONFIG.ASSET_TYPES.includes(assetType)) err('자산유형', 'ETF, STOCK, CRYPTO, GOLD, CASH 중 하나여야 합니다');
         if (!newSeen[key]) {
           newSeen[key] = true;
-          warn('심볼', '종목 마스터에 없어 새로 등록됩니다', `${symbol}/${exchange}`);
+          warn('심볼', cat ? '외부 종목 목록에서 찾아 새로 등록됩니다' : '종목 마스터·외부 종목 목록에 없어 새로 등록됩니다', `${symbol}/${exchange}`);
           if (!groupRaw) warn('자산군', '자산군이 비어 있어 기타종목(미지정)으로 집계됩니다', '');
         }
       }
@@ -559,6 +600,7 @@ window.DataService = (function () {
     onChange, resetMock, getStatus,
     getAccounts, addAccount, updateAccount, deleteAccount,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
+    getCatalogInfo, syncCatalog, searchCatalog, ensureInstrument,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate,
     getSnapshots, getSnapshotItems, createDailySnapshot,

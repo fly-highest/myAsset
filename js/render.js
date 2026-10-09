@@ -77,7 +77,8 @@ window.UI = (function () {
 
   // ---- 계좌 → 보유 종목 트리 (12-1항). 계좌 관리 화면과 XLSX 업로드 미리보기에서 사용 ----
   function holdingsTree(model, mode, opts = {}) {
-    const { editable = false, filterGroup = 'ALL', sortBy = 'default', collapsed = new Set(), showUpdated = editable } = opts; // showUpdated: 종목명 아래 '최종 수정' 표시
+    const { editable = false, filterGroup = 'ALL', sortBy = 'default', collapsed = new Set(), showUpdated = editable, linkGroups = true, byBroker = false } = opts;
+    // showUpdated: 종목명 아래 '최종 수정' 표시 / linkGroups: 자산군 클릭 시 자산군 현황으로 이동 / byBroker: 증권사별로 묶어 표시
     const total = model.total.valK;
     const groupIdx = c => Groups.codes.indexOf(c);
     const match = x => filterGroup === 'ALL' || (filterGroup === 'UNASSIGNED' ? x.unassigned : (x.group === filterGroup && !x.unassigned) || (filterGroup === 'OTHER_STOCK' && x.unassigned));
@@ -91,7 +92,23 @@ window.UI = (function () {
     const cols = 12 + (editable ? 1 : 0);
     const sortMark = sortBy === 'group' ? ' ▲' : sortBy === 'group-desc' ? ' ▼' : '';
     let body = '';
-    model.accounts.forEach(acc => {
+    let accounts = model.accounts;
+    const brokerAgg = {};
+    if (byBroker) {
+      const order = [];
+      accounts.forEach(a => { const b = a.broker || '(증권사 없음)'; if (!brokerAgg[b]) { brokerAgg[b] = { agg: Calc.emptyAgg(), n: 0 }; order.push(b); } a.rows.forEach(x => Calc.add(brokerAgg[b].agg, x.r)); brokerAgg[b].n++; });
+      accounts = order.flatMap(b => accounts.filter(a => (a.broker || '(증권사 없음)') === b));
+    }
+    let lastBroker = null;
+    accounts.forEach(acc => {
+      const bk = acc.broker || '(증권사 없음)';
+      if (byBroker && bk !== lastBroker) {
+        lastBroker = bk;
+        const bv = Calc.view(brokerAgg[bk].agg, mode, model.fx);
+        body += `<tr class="broker-row"><td colspan="7"><b>${esc(bk)}</b> <span class="muted">· ${brokerAgg[bk].n}개 계좌</span></td>
+          <td class="num">${amt(bv, 'val')}</td><td class="num">${amt(bv, 'inv')}</td><td class="num">${prof(bv, { split: false })}</td><td class="num">${ret(bv)}</td>
+          <td class="num">${weight(w(brokerAgg[bk].agg.valK, total), false)}</td>${editable ? '<td></td>' : ''}</tr>`;
+      }
       const av = Calc.view(acc.agg, mode, model.fx);
       const isCol = collapsed.has(acc.key);
       const rows = sortRows(acc.rows.filter(match));
@@ -117,7 +134,7 @@ window.UI = (function () {
         body += `<tr class="h-row">
           <td class="nm">${esc(i.name)}${x.noPrice ? ' <span class="tag-warn" title="Mock 현재가가 없어 평균매입가로 계산합니다">가격없음</span>' : ''}${showUpdated ? `<div class="sub upd">최종 수정 ${Fmt.mdhm(h.updated_at)}</div>` : ''}</td>
           <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td>
-          <td>${groupBadge(x.group, x.unassigned, { link: editable })}</td>
+          <td>${groupBadge(x.group, x.unassigned, { link: linkGroups })}</td>
           <td class="num">${Fmt.qty(x.r.q, i)}</td>
           <td class="num">${isCash ? '<span class="muted">—</span>' : Fmt.price(x.r.ap, i.currency)}</td>
           <td class="num">${isUSD ? Fmt.fx(x.r.fxBuy) : '<span class="muted">—</span>'}</td>
@@ -135,7 +152,7 @@ window.UI = (function () {
     return `<div class="tbl-wrap tree-wrap"><table class="tbl tree">
       <thead><tr>
         <th>종목명</th><th>심볼</th>
-        <th>${editable ? `<button type="button" class="th-sort" data-sort-group title="자산군 순으로 정렬">자산군${sortMark}</button>` : '자산군'}</th>
+        <th><button type="button" class="th-sort" data-sort-group title="자산군 순으로 정렬">자산군${sortMark}</button></th>
         <th class="num">수량</th><th class="num">평균매입가</th><th class="num">매입환율</th><th class="num">현재가</th>
         <th class="num">평가금액</th><th class="num">투자금액</th><th class="num">손익</th><th class="num">수익률</th>
         <th class="num" title="계좌 행: 전체 대비 / 종목 행: 계좌 내">비중</th>
@@ -145,6 +162,54 @@ window.UI = (function () {
       <tfoot><tr><td colspan="7">전체 합계</td><td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv, { split: true })}</td><td class="num">${weight(total ? 100 : 0, false)}</td>${editable ? '<td></td>' : ''}</tr></tfoot>
     </table></div>`;
   }
+
+  // ---- 계좌 트리 + 필터·정렬·접기 (계좌 현황 / 계좌 관리 공용) ----
+  // st = { filterGroup, sortBy, collapsed:Set } 화면별 상태 객체
+  function treeSection(model, mode, st, opts = {}) {
+    const { filterGroup, sortBy } = st;
+    return `
+      <div class="sec-hd">
+        <div class="toolbar">
+          <label class="small muted" for="f-group">자산군 필터</label>
+          <select id="f-group" class="inline">
+            <option value="ALL">전체</option>
+            ${Groups.list.map(g => `<option value="${g.code}" ${filterGroup === g.code ? 'selected' : ''}>${g.name}${g.code === 'OTHER_STOCK' ? ' (미지정 포함)' : ''}</option>`).join('')}
+            <option value="UNASSIGNED" ${filterGroup === 'UNASSIGNED' ? 'selected' : ''}>미지정만</option>
+          </select>
+          <label class="small muted" for="f-sort">정렬</label>
+          <select id="f-sort" class="inline">
+            <option value="default" ${sortBy === 'default' ? 'selected' : ''}>등록순</option>
+            <option value="group" ${sortBy === 'group' ? 'selected' : ''}>자산군순</option>
+            <option value="group-desc" ${sortBy === 'group-desc' ? 'selected' : ''}>자산군 역순</option>
+            <option value="value" ${sortBy === 'value' ? 'selected' : ''}>평가금액 큰 순</option>
+          </select>
+          ${opts.extraTools || ''}
+        </div>
+        <div class="toolbar"><button type="button" class="btn btn-sm" id="exp-all">모두 펼치기</button><button type="button" class="btn btn-sm" id="col-all">모두 접기</button></div>
+      </div>
+      ${filterGroup !== 'ALL' ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
+      ${holdingsTree(model, mode, { ...opts, filterGroup, sortBy, collapsed: st.collapsed })}`;
+  }
+  function bindTree(root, model, st) {
+    root.querySelector('#f-group').onchange = e => { st.filterGroup = e.target.value; App.rerender(); };
+    root.querySelector('#f-sort').onchange = e => { st.sortBy = e.target.value; App.rerender(); };
+    root.querySelector('#exp-all').onclick = () => { st.collapsed.clear(); App.rerender(); };
+    root.querySelector('#col-all').onclick = () => { model.accounts.forEach(a => st.collapsed.add(a.key)); App.rerender(); };
+    const sg = root.querySelector('[data-sort-group]');
+    if (sg) sg.onclick = () => { st.sortBy = st.sortBy === 'group' ? 'group-desc' : st.sortBy === 'group-desc' ? 'default' : 'group'; App.rerender(); };
+    root.querySelectorAll('[data-toggle-acc]').forEach(b => b.onclick = () => {
+      const k = b.dataset.toggleAcc; st.collapsed.has(k) ? st.collapsed.delete(k) : st.collapsed.add(k); App.rerender();
+    });
+    fitTree();
+  }
+  // 표 높이를 '첫 화면의 남은 높이'에 맞춰, 아래로 스크롤하지 않아도 가로 스크롤바가 보이게 합니다.
+  function fitTree() {
+    const wrap = document.querySelector('#main .tree-wrap');
+    if (!wrap) return;
+    const top = wrap.getBoundingClientRect().top + window.scrollY;
+    wrap.style.maxHeight = Math.max(360, window.innerHeight - top - 16) + 'px';
+  }
+  window.addEventListener('resize', fitTree);
 
   // ---- Chart.js 도우미 (다시 그릴 때 이전 차트 제거) ----
   function chart(canvasId, config) {
@@ -156,18 +221,23 @@ window.UI = (function () {
   }
   function moneyTick(c) { return v => (c === 'USD' ? '$' : '₩') + Fmt.plain(Math.abs(v) >= 1e6 && c !== 'USD' ? Math.round(v / 1e4) : v) + (Math.abs(v) >= 1e6 && c !== 'USD' ? '만' : ''); }
 
-  // ---- 종목 마스터 검색 (이름/심볼/영문명) → 한 종목 선택 ----
-  // 결과: 선택한 종목 객체 / { __new: true } (새 종목 등록 선택) / null (취소)
+  // ---- 종목 검색 (이름/심볼/영문명) → 한 종목 선택 ----
+  // 등록된 종목 + 외부 종목 목록(월 1회 갱신)을 함께 검색합니다. 외부 목록 종목을 고르면 종목 마스터에 자동 등록됩니다.
+  // 결과: 선택한 종목 객체 / { __new: true } (직접 등록 선택) / null (취소)
   function pickInstrument({ title = '종목 검색', confirmLabel = '선택', allowNew = false, note = '' } = {}) {
     return new Promise(resolve => {
       let selected = null, resolved = false;
-      const finish = (api, val) => { resolved = true; api.close(); resolve(val); };
+      const finish = async (api, val) => {
+        resolved = true;
+        if (val && !val.__new && !val.id) val = await DataService.ensureInstrument(val);
+        api.close(); resolve(val);
+      };
       const m = App.modal({
         title, size: 'mid',
         body: `${note ? `<p class="small muted" style="margin-top:0">${note}</p>` : ''}
           <input type="search" id="pick-q" placeholder="이름 / 심볼 / 영문명으로 검색 (예: QQQ, 나스닥, Samsung)" autocomplete="off">
           <div class="search-list" id="pick-list"></div>
-          ${allowNew ? '<div class="small muted" style="margin-top:10px">검색 결과에 없나요? <button type="button" class="btn btn-sm" id="pick-new">+ 새 종목 등록</button></div>' : ''}`,
+          ${allowNew ? '<div class="small muted" style="margin-top:10px">외부 종목 목록에도 없나요? <button type="button" class="btn btn-sm" id="pick-new">+ 직접 등록</button></div>' : ''}`,
         onClose: () => { if (!resolved) resolve(null); },
         buttons: [
           { label: '취소' },
@@ -177,15 +247,15 @@ window.UI = (function () {
       const list = m.body.querySelector('#pick-list');
       const ok = m.footer.querySelector('#pick-ok');
       async function search() {
-        const items = await DataService.searchInstruments(m.body.querySelector('#pick-q').value);
-        list.innerHTML = items.map(i => `
-          <div class="search-item ${selected && selected.id === i.id ? 'sel' : ''}" data-id="${esc(i.id)}">
+        const items = await DataService.searchCatalog(m.body.querySelector('#pick-q').value);
+        list.innerHTML = items.map((i, idx) => `
+          <div class="search-item" data-idx="${idx}">
             <div><b>${esc(i.name)}</b> <span class="muted small">${esc(i.eng_name || '')}</span>
               <div class="meta">${esc(i.symbol)} · ${esc(i.exchange)} · ${esc(i.asset_type)} · ${esc(i.currency)}</div></div>
-            <div>${groupBadge(Groups.of(i), !i.asset_group, { link: false })}</div>
+            <div>${i.registered ? groupBadge(Groups.of(i), !i.asset_group, { link: false }) : '<span class="tag" title="외부 종목 목록에서 찾은 종목 — 선택하면 등록됩니다">외부 목록</span>'}</div>
           </div>`).join('') || '<div class="muted center" style="padding:16px">검색 결과가 없습니다</div>';
         list.querySelectorAll('.search-item').forEach(el => {
-          const inst = items.find(x => x.id === el.dataset.id);
+          const inst = items[+el.dataset.idx];
           el.addEventListener('click', () => {
             selected = inst;
             list.querySelectorAll('.search-item').forEach(x => x.classList.toggle('sel', x === el));
@@ -201,5 +271,5 @@ window.UI = (function () {
     });
   }
 
-  return { amt, prof, ret, weight, w, groupBadge, totalsCards, groupTable, holdingsTree, chart, moneyTick, pickInstrument };
+  return { amt, prof, ret, weight, w, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
 })();

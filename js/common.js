@@ -8,8 +8,9 @@ window.App = (function () {
   const PAGES = [
     { key: 'dashboard', href: 'index.html', label: 'Dashboard' },
     { key: 'groups', href: 'groups.html', label: '자산군 현황' },
-    { key: 'accounts', href: 'accounts.html', label: '계좌 관리' },
-    { key: 'history', href: 'history.html', label: '이력' }
+    { key: 'accounts', href: 'accounts.html', label: '계좌 현황' },
+    { key: 'history', href: 'history.html', label: '이력' },
+    { key: 'manage', href: 'manage.html', label: '계좌/자산관리' }
   ];
   const app = { mode: 'KRW' }; // 기본값 원화환산, 선택 상태는 저장하지 않음 (13항)
   let renderFn = null;
