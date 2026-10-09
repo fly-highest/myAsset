@@ -3,7 +3,7 @@ window.App = (function () {
   const MODES = [
     { code: 'KRW', label: '원화환산' },
     { code: 'USD', label: '달러환산' },
-    { code: 'MIXED', label: '한국=원화 / 미국=달러' }
+    { code: 'MIXED', label: '통화별' }
   ];
   const PAGES = [
     { key: 'dashboard', href: 'index.html', label: 'Dashboard' },

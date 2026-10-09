@@ -46,7 +46,7 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·한국=원화/미국=달러 3개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별 3개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
         ${table}
       </div>`;
 
@@ -117,7 +117,7 @@
     return !isNaN(d) && d.toISOString().slice(0, 10) === s;
   }
 
-  // 엑셀: 화면의 통화 버튼과 관계없이 3개 탭(원화환산 / 달러환산 / 한국=원화·미국=달러)을 한 파일로
+  // 엑셀: 화면의 통화 버튼과 관계없이 3개 탭(원화환산 / 달러환산 / 통화별)을 한 파일로
   // 각 탭 = 1~2행 기준정보 + '날짜별 자산 현황' 표 (지금 선택한 기간, 최근 날짜가 위)
   function exportXlsx() {
     const { snaps, models, fromVal, toVal } = lastView;
@@ -168,7 +168,7 @@
     UI.downloadXlsx(`myAsset_이력_${fromVal}_${toVal}.xlsx`, [
       { name: '원화환산', rows: sheet('KRW', '원화환산'), widths, formatFn },
       { name: '달러환산', rows: sheet('USD', '달러환산'), widths, formatFn },
-      { name: '한국=원화·미국=달러', rows: sheet('MIXED', '한국=원화 / 미국=달러'), widths, formatFn }
+      { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn }
     ]);
   }
 

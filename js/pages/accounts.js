@@ -13,7 +13,7 @@
     main.innerHTML = `
       <div class="page-hd">
         <div><h1>계좌 현황</h1><p class="desc">계좌별 보유 종목 현황입니다 (조회 전용). 수정은 <a href="manage.html#accounts">계좌/자산관리 › 계좌 관리</a>에서 합니다.</p></div>
-        <div class="toolbar"><button type="button" class="btn" id="btn-xlsx" title="계좌·보유 현황을 원화환산·달러환산·한국=원화/미국=달러 3개 탭으로 내려받습니다">엑셀 다운로드</button></div>
+        <div class="toolbar"><button type="button" class="btn" id="btn-xlsx" title="계좌·보유 현황을 원화환산·달러환산·통화별 3개 탭으로 내려받습니다">엑셀 다운로드</button></div>
       </div>
       ${App.statusBar(status)}
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
@@ -32,7 +32,7 @@
     }
   }
 
-  // 엑셀: 화면의 통화 버튼과 관계없이 3개 탭(원화환산 / 달러환산 / 한국=원화·미국=달러)을 한 파일로
+  // 엑셀: 화면의 통화 버튼과 관계없이 3개 탭(원화환산 / 달러환산 / 통화별)을 한 파일로
   // 각 탭 = 1행 기준정보 + 계좌 소계 행 → 그 계좌의 종목 행 … → 맨 아래 전체 합계
   async function exportXlsx() {
     const { model, status, fxInfo } = last;
@@ -92,7 +92,7 @@
     UI.downloadXlsx(`myAsset_계좌현황_${Fmt.todayKST()}.xlsx`, [
       { name: '원화환산', rows: sheet('KRW', '원화환산'), widths, formatFn },
       { name: '달러환산', rows: sheet('USD', '달러환산'), widths, formatFn },
-      { name: '한국=원화·미국=달러', rows: sheet('MIXED', '한국=원화 / 미국=달러'), widths, formatFn }
+      { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn }
     ]);
   }
 
