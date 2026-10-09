@@ -30,6 +30,15 @@ window.UI = (function () {
   }
   const w = (part, whole) => (whole ? (part / whole) * 100 : 0);
 
+  // 현재가 칸: 마우스를 올리면 기준 시각·출처, 예시(Mock) 가격이면 [예시] 표시
+  const SRC = { GOOGLE: 'Google Finance', UPBIT: '업비트', GOLD: '국제 금시세 × 환율', MOCK: '예시 가격(Mock)' };
+  function priceCell(cp, inst, meta, noPrice) {
+    if (inst.asset_type === 'CASH' || noPrice) return '<span class="muted">—</span>';
+    if (!meta) return Fmt.price(cp, inst.currency);
+    const title = `${SRC[meta.source] || meta.source} · ${Fmt.mdhm(meta.as_of)} 기준`;
+    return `<span class="price-cell" title="${esc(title)}">${Fmt.price(cp, inst.currency)}</span>${meta.source === 'MOCK' ? '<span class="tag-mock" title="실제 시세가 아닌 예시 가격">예시</span>' : ''}<div class="sub">${Fmt.mdhm(meta.as_of)}</div>`;
+  }
+
   // 자산군 표시 (계좌 관리 화면: 읽기 전용, 클릭 시 자산군 현황으로 이동)
   function groupBadge(code, unassigned, { link = true } = {}) {
     const tag = link ? 'a' : 'span';
@@ -138,7 +147,7 @@ window.UI = (function () {
           <td class="num">${Fmt.qty(x.r.q, i)}</td>
           <td class="num">${isCash ? '<span class="muted">—</span>' : Fmt.price(x.r.ap, i.currency)}</td>
           <td class="num">${isUSD ? Fmt.fx(x.r.fxBuy) : '<span class="muted">—</span>'}</td>
-          <td class="num">${isCash ? '<span class="muted">—</span>' : x.noPrice ? '<span class="muted">—</span>' : Fmt.price(x.r.cp, i.currency)}</td>
+          <td class="num">${priceCell(x.r.cp, i, x.priceMeta, x.noPrice)}</td>
           <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v)}</td><td class="num">${ret(v, { split: true })}</td>
           <td class="num" title="계좌 내 비중">${weight(w(x.r.valK, acc.agg.valK), false)}</td>
           ${editable ? `<td class="actions">
@@ -287,5 +296,5 @@ window.UI = (function () {
     });
   }
 
-  return { amt, prof, ret, weight, w, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
+  return { amt, prof, ret, weight, w, priceCell, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
 })();

@@ -13,7 +13,13 @@ window.APP_CONFIG = {
   CURRENCIES: ['KRW', 'USD'],
   EXCHANGES: ['KRX', 'NASDAQ', 'NYSE', 'UPBIT', 'CASH'],
   STORAGE_KEY: 'myAsset.mock.v1',
-  USER_ID: 'mock-user'
+  USER_ID: 'mock-user',
+  // Supabase (현재가·환율 읽기 전용). publishable 키는 브라우저 공개용 키라 코드에 있어도 됩니다.
+  // 쓰기는 서버 함수(update-prices)만 할 수 있도록 DB 보안 규칙(RLS)으로 막혀 있습니다.
+  SUPABASE: {
+    url: 'https://sertbrnhwpmuyfyryaov.supabase.co',
+    key: 'sb_publishable_oULEo71clmkuEqyTDIDtxQ_gmrcKIJo'
+  }
 };
 
 window.Groups = {

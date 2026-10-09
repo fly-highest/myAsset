@@ -77,8 +77,85 @@ window.DataService = (function () {
   // ---------------------------------------------------------------
   // 가격 · 환율 (향후 Kiwoom/Upbit/환율 API 대체 지점)
   // ---------------------------------------------------------------
-  async function getPrices() { return { ...MOCK.prices.values }; }
-  async function getFxRate() { return { ...MOCK.fx }; }
+  // 실제 현재가는 Supabase DB(prices, fx_rates)에서 읽습니다. 서버 함수 update-prices 가 매시 정각에 저장
+  //   주식·ETF·환율·국제 금시세 = Google Finance(Google 시트), 가상자산 = 업비트, KRX 금현물 = 국제 금시세 × 환율
+  // DB 에 아직 가격이 없는 종목은 Mock 예시 가격(source: MOCK)을 씁니다.
+  const SB = APP_CONFIG.SUPABASE;
+  let live = null, liveLoading = null;
+  async function sbGet(path) {
+    const r = await fetch(`${SB.url}/rest/v1/${path}`, { headers: { apikey: SB.key } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+  function loadLive(force) {
+    if (!SB || !SB.url) return Promise.resolve(null);
+    if (!force && live && Date.now() - live.at < 60000) return Promise.resolve(live);
+    if (liveLoading) return liveLoading;
+    liveLoading = (async () => {
+      try {
+        const [prices, fx, runs] = await Promise.all([
+          sbGet('prices?select=symbol,exchange,price,currency,source,as_of'),
+          sbGet('fx_rates?select=pair,rate,source,as_of'),
+          sbGet('price_runs?select=trigger,started_at,finished_at,ok_count,fail_count,message&order=started_at.desc&limit=1')
+        ]);
+        live = {
+          at: Date.now(), ok: true,
+          prices: new Map(prices.map(p => [instKey(p.symbol, p.exchange), { ...p, price: Number(p.price) }])),
+          fx: Object.fromEntries(fx.map(f => [f.pair, { ...f, rate: Number(f.rate) }])),
+          run: runs[0] || null
+        };
+      } catch (e) {
+        live = { at: Date.now(), ok: false, error: e.message, prices: new Map(), fx: {}, run: null };
+      }
+      liveLoading = null;
+      return live;
+    })();
+    return liveLoading;
+  }
+  // 종목 id → 가격 정보 { price, source(GOOGLE·UPBIT·GOLD·MOCK), as_of }
+  async function getPriceMeta() {
+    const L = await loadLive();
+    const out = {};
+    state.instruments.forEach(i => {
+      if (i.asset_type === 'CASH') return;
+      const p = L && L.prices.get(instKey(i.symbol, i.exchange));
+      if (p) out[i.id] = { price: p.price, source: p.source, as_of: p.as_of };
+      else if (MOCK.prices.values[i.id] != null) out[i.id] = { price: MOCK.prices.values[i.id], source: 'MOCK', as_of: MOCK.prices.as_of };
+    });
+    return out;
+  }
+  async function getPrices() {
+    const meta = await getPriceMeta();
+    return Object.fromEntries(Object.entries(meta).map(([id, m]) => [id, m.price]));
+  }
+  async function getFxRate() {
+    const L = await loadLive();
+    const f = L && L.fx['USD/KRW'];
+    return f ? { pair: 'USD/KRW', rate: f.rate, as_of: f.as_of, source: f.source } : { ...MOCK.fx, source: 'MOCK' };
+  }
+  // 화면 표시용: 현재가가 언제 기준인지, 실시세/예시 가격 종목 수, 마지막 갱신 결과
+  async function getPriceStatus() {
+    const L = await loadLive();
+    const meta = await getPriceMeta();
+    const held = new Set(state.holdings.map(h => h.instrument_id));
+    let liveCount = 0, mockCount = 0, missing = 0, latest = null;
+    state.instruments.filter(i => held.has(i.id) && i.asset_type !== 'CASH').forEach(i => {
+      const m = meta[i.id];
+      if (!m) missing++;
+      else if (m.source === 'MOCK') mockCount++;
+      else { liveCount++; if (!latest || m.as_of > latest) latest = m.as_of; }
+    });
+    const fx = await getFxRate();
+    return { ok: !!(L && L.ok), error: L && L.error, latestAsOf: latest, fx, run: L && L.run, liveCount, mockCount, missing };
+  }
+  // [↻ 시세 갱신] 버튼: 서버 함수를 바로 실행하고 새 가격을 다시 읽습니다
+  async function refreshPrices() {
+    const r = await fetch(`${SB.url}/functions/v1/update-prices?trigger=manual`, { method: 'POST', headers: { apikey: SB.key } });
+    const body = await r.json().catch(() => ({ ok: false, message: 'HTTP ' + r.status }));
+    await loadLive(true);
+    listeners.forEach(fn => fn());
+    return body;
+  }
 
   // ---------------------------------------------------------------
   // 증권 마스터 (증권사 · 계좌종류) — 계좌는 여기 등록된 값만 선택합니다
@@ -811,7 +888,7 @@ window.DataService = (function () {
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument,
     getHoldings, addHolding, updateHolding, deleteHolding,
-    getPrices, getFxRate,
+    getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices,
     getSnapshots, getSnapshotItems, createDailySnapshot,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,

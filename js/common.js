@@ -35,7 +35,7 @@ window.App = (function () {
     if (!renderFn) return;
     if (rendering) { pending = true; return; }
     rendering = true;
-    try { await renderFn(); }
+    try { await renderFn(); updatePriceInfo(); }
     catch (e) { console.error(e); toast('화면을 그리는 중 오류가 발생했습니다: ' + e.message, 'error'); }
     rendering = false;
     if (pending) { pending = false; rerender(); }
@@ -48,14 +48,15 @@ window.App = (function () {
         <a class="brand" href="index.html">my<b>Asset</b> <span class="badge-mock" title="실제 DB가 아닌 Mock(가상) 데이터로 동작합니다">Mock</span></a>
         <nav class="nav">${PAGES.map(p => `<a href="${p.href}" class="${p.key === pageKey ? 'active' : ''}">${p.label}</a>`).join('')}</nav>
         <div class="hdr-right">
-          <span class="chip fx-chip" id="hdr-fx" title="적용 환율 (USD/KRW) — 손익 계산에 쓰는 현재 환율">$1 = <b>…</b></span>
+          <span class="chip fx-chip" id="hdr-fx" title="적용 환율 (USD/KRW) — 손익 계산에 쓰는 현재 환율">$1 = <b>…</b> <span class="asof" id="hdr-asof"></span></span>
+          <button type="button" class="btn btn-sm" id="btn-refresh-prices" title="Google Finance·업비트에서 지금 현재가를 다시 가져옵니다 (자동: 매시 정각)">↻ 시세 갱신</button>
           <div class="seg" role="group" aria-label="통화 표시">
             ${MODES.map(m => `<button type="button" data-mode="${m.code}" class="${m.code === app.mode ? 'on' : ''}">${m.label}</button>`).join('')}
           </div>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-mock" title="이 브라우저에 저장된 Mock 변경 내용을 지우고 처음 상태로 되돌립니다">Mock 초기화</button>
         </div>
       </div>`;
-    DataService.getFxRate().then(fx => { el.querySelector('#hdr-fx b').textContent = Fmt.fx(fx.rate); });
+    el.querySelector('#btn-refresh-prices').addEventListener('click', refreshPricesNow);
     el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
       app.mode = b.dataset.mode;
       el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === app.mode));
@@ -67,6 +68,43 @@ window.App = (function () {
         toast('Mock 데이터를 초기화했습니다.');
       }
     });
+  }
+
+  // ---------------- 현재가 기준 시각 표시 + [↻ 시세 갱신] ----------------
+  const SOURCE_NAME = { GOOGLE: 'Google Finance', UPBIT: '업비트', GOLD: '국제 금시세 환산', MOCK: '예시 가격(Mock)' };
+  async function updatePriceInfo() {
+    const st = await DataService.getPriceStatus();
+    const fxB = document.querySelector('#hdr-fx b'), asof = document.querySelector('#hdr-asof');
+    if (fxB) {
+      fxB.textContent = Fmt.fx(st.fx.rate);
+      document.querySelector('#hdr-fx').title = `적용 환율 USD/KRW · ${SOURCE_NAME[st.fx.source] || st.fx.source} · ${Fmt.mdhm(st.fx.as_of)} 기준`;
+    }
+    if (asof) asof.textContent = st.latestAsOf ? `· 시세 ${Fmt.mdhm(st.latestAsOf)}` : '· 예시 시세';
+    // 각 화면 상태 줄의 '현재가 기준' 칩
+    const parts = [];
+    parts.push(st.latestAsOf ? `현재가 기준 <b>${Fmt.mdhm(st.latestAsOf)}</b>` : '현재가 <b>예시 가격</b>');
+    if (st.liveCount) parts.push(`실시세 ${st.liveCount}종목`);
+    if (st.mockCount) parts.push(`<span class="warn-text">예시 가격 ${st.mockCount}종목</span>`);
+    if (st.missing) parts.push(`<span class="warn-text">가격 없음 ${st.missing}종목</span>`);
+    const title = [
+      '자동 갱신: 매시 정각 (Google Finance 는 최대 약 20분 지연될 수 있음)',
+      st.run ? `마지막 실행: ${Fmt.mdhm(st.run.started_at)} (${st.run.trigger === 'cron' ? '자동' : '수동'}) — ${st.run.message || ''}` : '',
+      st.ok ? '' : `시세 DB 연결 실패: ${st.error || ''}`
+    ].filter(Boolean).join('\n');
+    document.querySelectorAll('[data-price-status]').forEach(elm => { elm.innerHTML = parts.join(' · '); elm.title = title; });
+  }
+  async function refreshPricesNow(e) {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '갱신 중…';
+    try {
+      const r = await DataService.refreshPrices();
+      if (r.ok) toast(`시세를 갱신했습니다 (${Fmt.mdhm(r.as_of)} 기준) — 성공 ${r.updated} · 실패 ${r.failed}`);
+      else toast(r.message || '시세를 갱신하지 못했습니다.', 'error');
+    } catch (err) { toast('시세 서버에 연결하지 못했습니다: ' + err.message, 'error'); }
+    btn.disabled = false;
+    btn.textContent = label;
   }
 
   function init(pageKey, fn) {
@@ -156,6 +194,7 @@ window.App = (function () {
     if (showSnapshot && st.lastSnapshot) {
       parts.push(`<span class="chip">최근 스냅샷: <b>${Fmt.md(st.lastSnapshot.date)} ${st.lastSnapshot.time}</b>${st.lastSnapshot.simulated ? ' (시뮬레이션)' : ''} · 다음 스냅샷: <b>${Fmt.md(st.nextSnapshotDate)} 08:00</b></span>`);
     }
+    parts.push('<span class="chip" data-price-status title="">현재가 기준 …</span>');
     let html = `<div class="status-chips">${parts.join('')}</div>`;
     if (showSnapshot && st.changedSinceSnapshot) {
       html += `<div class="notice">마지막 스냅샷 이후 변경된 보유가 있습니다. 다음 스냅샷(${Fmt.md(st.nextSnapshotDate)} 08:00)에 저장됩니다.</div>`;
@@ -165,11 +204,12 @@ window.App = (function () {
 
   // 현재 현황 모델 로드
   async function loadCurrentModel() {
-    const [accounts, holdings, instruments, prices, fxInfo, status] = await Promise.all([
+    const [accounts, holdings, instruments, priceMeta, fxInfo, status] = await Promise.all([
       DataService.getAccounts(), DataService.getHoldings(), DataService.getInstruments(),
-      DataService.getPrices(), DataService.getFxRate(), DataService.getStatus()
+      DataService.getPriceMeta(), DataService.getFxRate(), DataService.getStatus()
     ]);
-    const model = Calc.buildModel({ accounts, holdings, instruments, prices, fx: fxInfo.rate });
+    const prices = Object.fromEntries(Object.entries(priceMeta).map(([id, m]) => [id, m.price]));
+    const model = Calc.buildModel({ accounts, holdings, instruments, prices, priceMeta, fx: fxInfo.rate });
     return { model, accounts, holdings, instruments, prices, fxInfo, status };
   }
 

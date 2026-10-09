@@ -16,7 +16,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="../js/config.js"></script>
-  <script>APP_CONFIG.STORAGE_KEY = 'myAsset.selftest'; try { localStorage.removeItem('myAsset.selftest'); } catch (e) {}</script>
+  <script>APP_CONFIG.SUPABASE = null; /* 자체 점검은 Mock 가격으로 */ APP_CONFIG.STORAGE_KEY = 'myAsset.selftest'; try { localStorage.removeItem('myAsset.selftest'); } catch (e) {}</script>
   <script src="../js/format.js"></script>
   <script src="../js/calc.js"></script>
   <script src="../mock/securityMaster.js"></script>

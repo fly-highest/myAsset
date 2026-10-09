@@ -41,7 +41,7 @@
             <span class="tag">${I.rows.length}계좌</span></td>
           <td class="num">${Fmt.qty(I.agg.q, inst)}</td>
           <td class="num">${isCash ? '<span class="muted">—</span>' : Fmt.price(avg, inst.currency)}${isUSD ? `<div class="sub">환율 ${Fmt.fx(avgFx)}</div>` : ''}</td>
-          <td class="num">${isCash || I.noPrice ? '<span class="muted">—</span>' : Fmt.price(cp, inst.currency)}</td>
+          <td class="num">${UI.priceCell(cp, inst, I.rows[0].priceMeta, I.noPrice)}</td>
           <td class="num">${UI.amt(iv, 'val')}</td><td class="num">${UI.amt(iv, 'inv')}</td><td class="num">${UI.prof(iv)}</td><td class="num">${UI.ret(iv)}</td>
           <td class="num" title="자산군 내 비중">${UI.weight(UI.w(I.agg.valK, G.agg.valK))}</td>
           <td class="num" title="전체 대비 비중">${UI.weight(UI.w(I.agg.valK, total))}</td>

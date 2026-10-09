@@ -70,7 +70,7 @@ window.Calc = (function () {
   }
 
   // 현재 현황 모델
-  function buildModel({ accounts, holdings, instruments, prices, fx }) {
+  function buildModel({ accounts, holdings, instruments, prices, fx, priceMeta = {} }) {
     const instMap = Object.fromEntries(instruments.map(i => [i.id, i]));
     const rows = [];
     holdings.forEach(h => {
@@ -80,7 +80,7 @@ window.Calc = (function () {
       const noPrice = price == null;
       if (noPrice) price = h.avg_price; // Mock 가격이 없는 신규 종목은 평균매입가로 대체
       rows.push({
-        holding: h, accKey: h.account_id, inst, group: Groups.of(inst), unassigned: !inst.asset_group, noPrice,
+        holding: h, accKey: h.account_id, inst, group: Groups.of(inst), unassigned: !inst.asset_group, noPrice, priceMeta: priceMeta[inst.id] || null,
         r: row(h, inst.currency, price, fx)
       });
     });

@@ -293,3 +293,7 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .master-col .comp-list li { gap: 8px; }
 .master-col .comp-list li .btn + .btn { margin-left: 3px; }
 .issue-tbl .val-in { color: var(--danger); } .issue-tbl .val-db { color: #17803d; font-weight: 600; }
+.fx-chip .asof { color: var(--muted); font-size: 11.5px; }
+.warn-text { color: #a15c00; }
+.tag-mock { font-size: 10.5px; color: #8a5a00; background: #fff1d6; border-radius: 3px; padding: 0 4px; margin-left: 3px; }
+.price-cell { cursor: help; }
