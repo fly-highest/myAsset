@@ -97,7 +97,7 @@ window.Calc = (function () {
       if (!seen[accKey]) { seen[accKey] = true; accList.push({ key: accKey, id: it.account_id, name: it.account_name }); }
       const inst = { id: it.instrument_id, name: it.name, symbol: it.symbol, exchange: it.exchange, asset_type: it.asset_type, currency: it.currency, asset_group: it.asset_group };
       return {
-        item: it, accKey, inst, group: it.asset_group || 'OTHER_STOCK', unassigned: false,
+        item: it, accKey, inst, group: Groups.of(it), unassigned: false, // 그 뒤 삭제된 자산군은 기타종목으로
         r: row(it, it.currency, it.current_price, it.exchange_rate)
       };
     });

@@ -32,6 +32,7 @@ window.DataService = (function () {
       instruments: clone(MOCK.instruments),
       holdings: clone(MOCK.holdings),
       extraSnapshots: [], // [08:00 스냅샷 생성 시뮬레이션]으로 추가된 스냅샷
+      groups: clone(APP_CONFIG.GROUPS), // 자산군 목록 (추가·삭제 가능)
       targets: clone(DEFAULT_TARGETS), // 투자 목표 비중 (기준별 자산군 목표 %)
       meta: { baseDate: Fmt.todayKST(), baseSource: 'Mock 초기 데이터', changedSinceSnapshot: false, importBackup: null }
     };
@@ -66,6 +67,9 @@ window.DataService = (function () {
     } catch (e) { /* 저장소를 못 쓰면 초기 Mock 으로 동작 */ }
     if (!state) state = seed();
     if (!state.targets) state.targets = clone(DEFAULT_TARGETS); // 예전 저장 데이터에는 목표 비중이 없음
+    if (!state.groups) state.groups = clone(APP_CONFIG.GROUPS); // 예전 저장 데이터는 기본 7개 자산군
+    Groups.set(state.groups);
+    state.instruments.forEach(i => { if (i.asset_group && !Groups.has(i.asset_group)) i.asset_group = null; }); // 삭제된 자산군 → 미지정
     addNewDefaultBrokers();
     // 잡주 종목코드 변경 (잡주 → 999999): 이미 등록한 브라우저도 맞춰 줌
     state.instruments.forEach(i => { if (i.exchange === 'KRX' && i.symbol === '잡주') { i.symbol = '999999'; i.updated_at = nowISO(); } });
@@ -334,6 +338,58 @@ window.DataService = (function () {
   async function resetTargetPlans() {
     state.targets = clone(DEFAULT_TARGETS);
     commit();
+  }
+
+  // ---------------------------------------------------------------
+  // 자산군 (추가 · 이름/색 수정 · 순서 · 삭제). 기타종목은 미지정 종목이 모이는 곳이라 삭제 불가
+  // ---------------------------------------------------------------
+  const GROUP_COLORS = ['#7f97a8', '#d9434f', '#2f6fdf', '#17a589', '#8e5cc4', '#c9a227', '#ef7d22', '#e05e9b', '#3aa6c9', '#6c8a2e', '#a0522d', '#5b6ee1'];
+  async function getGroups() {
+    return clone(state.groups).map(g => ({ ...g, count: state.instruments.filter(i => i.asset_group === g.code).length }));
+  }
+  function groupCheck(name, color, exceptCode) {
+    name = String(name || '').trim();
+    if (!name) throw fail('자산군 이름을 입력해 주세요.');
+    if (name.length > 20) throw fail('자산군 이름은 20자 이내로 입력해 주세요.');
+    if (state.groups.some(g => g.code !== exceptCode && g.name === name)) throw fail('같은 이름의 자산군이 이미 있습니다.');
+    if (color && !/^#[0-9a-f]{6}$/i.test(color)) throw fail('색상 값이 올바르지 않습니다.');
+    return name;
+  }
+  async function addGroup({ name, color }) {
+    name = groupCheck(name, color);
+    let code;
+    do { code = 'G_' + Math.random().toString(36).slice(2, 8).toUpperCase(); } while (state.groups.some(g => g.code === code));
+    const used = state.groups.map(g => g.color);
+    const g = { code, name, color: color || GROUP_COLORS.find(c => !used.includes(c)) || '#888888' };
+    state.groups.push(g);
+    state.targets.forEach(p => { p.weights[code] = 0; }); // 기준별 목표 비중은 0%로 시작
+    commit();
+    return clone(g);
+  }
+  async function updateGroup(code, { name, color }) {
+    const g = state.groups.find(x => x.code === code);
+    if (!g) throw fail('자산군을 찾을 수 없습니다.');
+    g.name = groupCheck(name ?? g.name, color, code);
+    if (color) g.color = color;
+    commit();
+    return clone(g);
+  }
+  async function moveGroup(code, dir) {
+    const i = state.groups.findIndex(x => x.code === code), j = i + dir;
+    if (i < 0 || j < 0 || j >= state.groups.length) return;
+    [state.groups[i], state.groups[j]] = [state.groups[j], state.groups[i]];
+    commit();
+  }
+  // 삭제: 이 자산군 종목은 미지정(기타종목 집계)으로, 기준별 목표 비중에서는 이 자산군 몫이 빠짐. 지난 이력은 기타종목으로 합쳐 표시
+  async function deleteGroup(code) {
+    if (code === Groups.FALLBACK) throw fail('기타종목은 미지정 종목이 모이는 자산군이라 삭제할 수 없습니다.');
+    if (!state.groups.some(g => g.code === code)) throw fail('자산군을 찾을 수 없습니다.');
+    const now = nowISO();
+    state.instruments.forEach(i => { if (i.asset_group === code) { i.asset_group = null; i.updated_at = now; } });
+    state.targets.forEach(p => { delete p.weights[code]; });
+    state.groups = state.groups.filter(g => g.code !== code);
+    Groups.set(state.groups);
+    markChanged(false); commit();
   }
 
   async function deleteAccount(id) {
@@ -620,7 +676,7 @@ window.DataService = (function () {
     Groups.codes.forEach(c => { gv[c] = 0; gi[c] = 0; });
     items.forEach(it => {
       const r = Calc.row(it, it.currency, it.current_price, it.exchange_rate);
-      inv += r.invK; val += r.valK; gv[it.asset_group] += r.valK; gi[it.asset_group] += r.invK;
+      inv += r.invK; val += r.valK; const g = Groups.of(it); gv[g] += r.valK; gi[g] += r.invK;
     });
     Groups.codes.forEach(c => { gv[c] = Math.round(gv[c]); gi[c] = Math.round(gi[c]); });
     return {
@@ -1099,6 +1155,7 @@ window.DataService = (function () {
     getAccounts, addAccount, updateAccount, deleteAccount,
     getTargetPlans, saveTargetPlan, setGroupTargets, deleteTargetPlan, resetTargetPlans,
     getBrokers, getAccountTypes, addMaster, updateMaster, deleteMaster,
+    getGroups, addGroup, updateGroup, moveGroup, deleteGroup,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     getHoldings, addHolding, updateHolding, deleteHolding,

@@ -22,13 +22,17 @@ window.APP_CONFIG = {
   }
 };
 
+// 자산군 목록 — 기본 7개로 시작, 계좌/자산관리 › [자산군 편집]에서 추가·삭제·이름/색/순서 변경 (dataService 가 Groups.set 으로 채움)
 window.Groups = {
-  list: window.APP_CONFIG.GROUPS,
-  codes: window.APP_CONFIG.GROUPS.map(g => g.code),
+  FALLBACK: 'OTHER_STOCK', // 미지정 종목이 모이는 자산군 (삭제 불가)
+  list: window.APP_CONFIG.GROUPS.slice(),
+  get codes() { return this.list.map(g => g.code); },
+  set(list) { this.list = list; },
+  has(code) { return this.list.some(g => g.code === code); },
   name(code) { const g = this.list.find(x => x.code === code); return g ? g.name : code; },
   color(code) { const g = this.list.find(x => x.code === code); return g ? g.color : '#999'; },
-  // NULL(미지정)은 기타종목으로 집계
-  of(inst) { return (inst && inst.asset_group) || 'OTHER_STOCK'; },
+  // NULL(미지정)이나 삭제된 자산군은 기타종목으로 집계
+  of(inst) { const c = inst && inst.asset_group; return c && this.has(c) ? c : this.FALLBACK; },
   // 코드 또는 한글명 → 코드 (없으면 undefined)
   parse(v) {
     const s = String(v ?? '').trim();

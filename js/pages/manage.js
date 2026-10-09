@@ -25,7 +25,7 @@
       </div>
       ${App.statusBar(status)}
       <div class="sec">
-        <div class="sec-hd"><h2>자산군별 종목 매핑</h2><span class="small muted">진한 글씨 = 보유 중 · 흐린 글씨 = 매핑만 되어 있고 보유 없음</span></div>
+        <div class="sec-hd"><h2>자산군별 종목 매핑</h2><div class="toolbar"><span class="small muted">진한 글씨 = 보유 중 · 흐린 글씨 = 매핑만 되어 있고 보유 없음</span><button type="button" class="btn btn-sm" data-group-edit title="자산군을 추가·삭제하거나 이름·색·순서를 바꿉니다">자산군 추가/삭제</button></div></div>
         ${mappingSummary(instruments, heldCount)}
       </div>
       <div class="sec">
@@ -33,6 +33,7 @@
         ${content}
       </div>`;
 
+    main.querySelectorAll('[data-group-edit]').forEach(b => b.onclick = () => groupEditor());
     main.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, '', '#' + tab); App.rerender(); });
     if (tab === 'composition') bindComposition(main, instruments);
     else if (tab === 'accounts') {
@@ -135,6 +136,7 @@
     return `
       <div class="sec-hd" style="margin-top:0"><h2>목표 비중</h2>
         <div class="toolbar"><span class="small muted">투자 화면에서 기준별 목표 금액과 매수·매도 필요 금액을 계산합니다</span>
+          <button type="button" class="btn btn-sm" data-group-edit>자산군 추가/삭제</button>
           <button type="button" class="btn btn-sm btn-primary" id="plan-add">+ 기준 추가</button>
           <button type="button" class="btn btn-sm btn-ghost" id="plan-reset" title="처음 기본값으로 되돌립니다">기본값으로</button></div></div>
       <div class="tbl-wrap" style="margin-bottom:18px"><table class="tbl">
@@ -229,6 +231,61 @@
       el.addEventListener('input', upd);
       upd();
     });
+  }
+
+  // ---------------- 자산군 편집 (추가 · 이름/색 수정 · 순서 · 삭제) ----------------
+  function groupEditor() {
+    const m = App.modal({ title: '자산군 추가/삭제', size: 'mid', body: '', buttons: [{ label: '닫기', kind: 'primary' }] });
+    async function draw() {
+      const groups = await DataService.getGroups();
+      m.body.innerHTML = `
+        <p class="small muted" style="margin-top:0">자산군을 추가하면 모든 화면의 표·차트와 목표 비중에 칸이 생깁니다(목표 비중은 0%로 시작). 삭제하면 그 자산군의 종목은 <b>미지정</b>(기타종목으로 집계)이 되고, 기준별 목표 비중에서 그 몫이 빠집니다. 기타종목은 미지정 종목이 모이는 곳이라 삭제할 수 없습니다.</p>
+        <ul class="comp-list">${groups.map((g, i) => `
+          <li data-code="${esc(g.code)}">
+            <span class="m-name"><span class="dot" style="background:${g.color}"></span>${esc(g.name)} <span class="muted small">· ${g.count}종목</span></span>
+            <span><button type="button" class="btn btn-sm" data-up ${i === 0 ? 'disabled' : ''} title="위로">▲</button><button type="button" class="btn btn-sm" data-down ${i === groups.length - 1 ? 'disabled' : ''} title="아래로">▼</button><button type="button" class="btn btn-sm" data-edit>수정</button>${g.code === Groups.FALLBACK ? '' : '<button type="button" class="btn btn-sm btn-ghost-danger" data-del>삭제</button>'}</span>
+          </li>`).join('')}
+        </ul>
+        <div class="toolbar" style="margin-top:8px"><input type="color" id="g-new-color" value="#e05e9b" title="색상" style="width:44px;padding:2px"><input type="text" id="g-new" placeholder="새 자산군 이름 (예: 채권)" style="flex:1;width:auto"><button type="button" class="btn btn-primary btn-sm" id="g-add">추가</button></div>
+        <div class="notice" id="g-err" hidden></div>`;
+      const showErr = msg => { const el = m.body.querySelector('#g-err'); el.hidden = !msg; el.textContent = msg || ''; };
+      const input = m.body.querySelector('#g-new');
+      const add = async () => {
+        try { const g = await DataService.addGroup({ name: input.value, color: m.body.querySelector('#g-new-color').value }); App.toast(`'${g.name}' 자산군을 추가했습니다.`); draw(); }
+        catch (e) { showErr(e.message); }
+      };
+      m.body.querySelector('#g-add').onclick = add;
+      input.onkeydown = e => { if (e.key === 'Enter') add(); };
+      m.body.querySelectorAll('li[data-code]').forEach(li => {
+        const g = groups.find(x => x.code === li.dataset.code);
+        li.querySelector('[data-up]').onclick = async () => { await DataService.moveGroup(g.code, -1); draw(); };
+        li.querySelector('[data-down]').onclick = async () => { await DataService.moveGroup(g.code, 1); draw(); };
+        li.querySelector('[data-edit]').onclick = () => {
+          li.innerHTML = `<span class="toolbar" style="flex:1"><input type="color" value="${g.color}" style="width:44px;padding:2px"><input type="text" value="${esc(g.name)}" style="flex:1;width:auto"></span><span><button type="button" class="btn btn-sm btn-primary" data-ok>저장</button><button type="button" class="btn btn-sm" data-cancel>취소</button></span>`;
+          const [color, name] = li.querySelectorAll('input');
+          name.focus(); name.select();
+          const save = async () => {
+            try { await DataService.updateGroup(g.code, { name: name.value, color: color.value }); App.toast('자산군을 수정했습니다.'); draw(); }
+            catch (e) { showErr(e.message); }
+          };
+          li.querySelector('[data-ok]').onclick = save;
+          li.querySelector('[data-cancel]').onclick = () => draw();
+          name.onkeydown = e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); draw(); } };
+        };
+        const del = li.querySelector('[data-del]');
+        if (del) del.onclick = async () => {
+          const plans = (await DataService.getTargetPlans()).filter(p => p.weights[g.code]);
+          const msg = `<b>${esc(g.name)}</b> 자산군을 삭제할까요?<br><small>`
+            + (g.count ? `이 자산군의 종목 ${g.count}개는 지워지지 않고 <b>미지정</b>(기타종목으로 집계)이 됩니다.<br>` : '')
+            + (plans.length ? `목표 비중에서 이 몫이 빠집니다: ${plans.map(p => `${esc(p.name)} ${Fmt.weight(p.weights[g.code])}`).join(', ')} → 합계를 다시 100%로 맞춰 주세요.<br>` : '')
+            + '지난 이력에서는 기타종목에 합쳐서 보입니다.</small>';
+          if (!(await App.confirm(msg, { okLabel: '삭제', danger: true }))) return;
+          try { await DataService.deleteGroup(g.code); App.toast(`'${g.name}' 자산군을 삭제했습니다.`); draw(); }
+          catch (e) { showErr(e.message); }
+        };
+      });
+    }
+    draw();
   }
 
   async function addToGroup(code) {
