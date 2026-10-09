@@ -150,7 +150,7 @@ window.UI = (function () {
         body += `<tr class="h-row">
           <td class="nm">${esc(i.name)}${x.noPrice ? ' <span class="tag-warn" title="Mock 현재가가 없어 평균매입가로 계산합니다">가격없음</span>' : ''}${showUpdated ? `<div class="sub upd">최종 수정 ${Fmt.mdhm(h.updated_at)}</div>` : ''}</td>
           <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td>
-          <td>${groupBadge(x.group, x.unassigned, { link: linkGroups })}</td>
+          <td class="g-cell">${groupBadge(x.group, x.unassigned, { link: linkGroups })}${editable ? `<button type="button" class="btn-mini" data-act="set-group" data-id="${esc(h.id)}" title="이 종목의 자산군 변경 (이 종목을 가진 모든 계좌에 적용)">변경</button>` : ''}</td>
           <td class="num">${Fmt.qty(x.r.q, i)}</td>
           <td class="num">${isCash ? '<span class="muted">—</span>' : Fmt.price(x.r.ap, i.currency)}</td>
           <td class="num">${isUSD ? Fmt.fx(x.r.fxBuy) : '<span class="muted">—</span>'}</td>

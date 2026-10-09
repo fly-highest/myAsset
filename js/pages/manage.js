@@ -67,7 +67,7 @@
       <td>${esc(i.asset_type)}</td><td>${esc(i.currency)}</td>
       <td class="num">${heldCount[i.id] ? `${heldCount[i.id]}개 계좌` : '<span class="muted">보유 없음</span>'}</td>
       <td class="actions">${assigned
-        ? `<button type="button" class="btn btn-sm btn-ghost-danger" data-remove="${esc(i.id)}">제거</button>`
+        ? `<button type="button" class="btn btn-sm" data-move="${esc(i.id)}" title="다른 자산군으로 옮기기">자산군 변경</button><button type="button" class="btn btn-sm btn-ghost-danger" data-remove="${esc(i.id)}">제거</button>`
         : `<select class="inline" data-assign="${esc(i.id)}"><option value="">자산군 지정…</option>${Groups.list.map(g => `<option value="${g.code}">${g.name}</option>`).join('')}</select>`}</td>
     </tr>`;
     const blocks = Groups.list.map(g => {
@@ -119,6 +119,7 @@
       await DataService.updateInstrumentGroup(inst.id, sel.value);
       App.toast(`${inst.name} → ${Groups.name(sel.value)}`);
     });
+    main.querySelectorAll('[data-move]').forEach(b => b.onclick = () => groupPicker(instruments.find(i => i.id === b.dataset.move)));
     main.querySelectorAll('[data-add-to]').forEach(b => b.onclick = () => addToGroup(b.dataset.addTo));
     bindTargets(main);
   }
@@ -315,6 +316,26 @@
     draw();
   }
 
+  // 종목 한 개의 자산군 변경 팝업 (자산 구성 관리 표 · 계좌 관리 표의 종목 행 [변경])
+  function groupPicker(inst) {
+    const cur = inst.asset_group && Groups.has(inst.asset_group) ? inst.asset_group : '';
+    const btn = (code, label, color) => `<button type="button" class="btn ${code === cur ? 'on' : ''}" data-pick="${code}">${color ? `<span class="dot" style="background:${color}"></span>` : ''}${esc(label)}${code === cur ? ' <span class="muted small">(현재)</span>' : ''}</button>`;
+    const m = App.modal({
+      title: '자산군 변경',
+      body: `<p style="margin-top:0"><b>${esc(inst.name)}</b> <span class="muted small">${esc(inst.symbol)} · ${esc(inst.exchange)} · ${esc(inst.currency)}</span></p>
+        <p class="small muted">이 종목을 가진 <b>모든 계좌</b>의 보유분이 함께 옮겨집니다. 종목·보유 내역은 그대로이고 자산군 분류만 바뀝니다.</p>
+        <div class="gp-list">${Groups.list.map(g => btn(g.code, g.name, g.color)).join('')}${btn('', '미지정 (기타종목으로 집계)')}</div>`,
+      buttons: [{ label: '닫기' }]
+    });
+    m.body.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
+      const code = b.dataset.pick;
+      m.close();
+      if (code === cur) return;
+      await DataService.updateInstrumentGroup(inst.id, code || null);
+      App.toast(`${inst.name} → ${code ? Groups.name(code) : '미지정'}`);
+    });
+  }
+
   async function addToGroup(code) {
     const pick = await UI.pickInstrument({ title: `${Groups.name(code)}에 종목 추가`, confirmLabel: '추가', allowNew: true, note: '등록된 종목과 전체 상장 종목 목록(현금·RP 포함)에서 검색합니다.' });
     if (!pick) return;
@@ -388,6 +409,7 @@
       return;
     }
     const x = model.rows.find(r => r.holding.id === id);
+    if (act === 'set-group') return groupPicker(x.inst);
     const account = model.accounts.find(a => a.key === x.accKey).account;
     if (act === 'edit-holding') return holdingForm({ account, inst: x.inst, holding: x.holding });
     if (act === 'delete-holding') {

@@ -343,3 +343,9 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .g-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 9px; }
 .x-mini { border: 0; background: transparent; color: #8a909c; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 4px; }
 .x-mini:hover { color: var(--danger); background: #fdeeee; }
+.g-cell { white-space: nowrap; }
+.btn-mini { margin-left: 4px; font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; }
+.btn-mini:hover { color: var(--primary, #2457d6); border-color: #b9c8ef; background: #f3f6fd; }
+.gp-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.gp-list button { display: flex; align-items: center; gap: 6px; justify-content: flex-start; }
+.gp-list button.on { outline: 2px solid #2457d6; }
