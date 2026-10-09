@@ -1063,6 +1063,11 @@ window.DataService = (function () {
         instruments.push(inst);
         byKey[k] = inst;
       }
+      // 업로드 화면 [자산군 지정]에서 고른 자산군 (반영할 때 종목 마스터에 적용)
+      if (v.groupMap && k in v.groupMap) {
+        const g = v.groupMap[k] && Groups.has(v.groupMap[k]) ? v.groupMap[k] : null;
+        if (inst.asset_group !== g) { inst.asset_group = g; inst.updated_at = now; }
+      }
       // 계좌 = 계좌명 + 증권사
       const ak = r.account + '|' + r.broker, brokerId = (state.brokers.find(b => b.name === r.broker) || {}).id || null;
       const same = x => x.account === r.account && x.broker === r.broker;
@@ -1095,7 +1100,20 @@ window.DataService = (function () {
     const prices = await getPrices();
     const fx = (await getFxRate()).rate;
     const accounts = s.accounts.map(withNames); // 미리보기 표에 증권사·계좌종류 이름 표시
-    return { ...s, accounts, baseDate: v.baseDate, fx, model: Calc.buildModel({ ...s, accounts, prices, fx }) };
+    // 파일에 나오는 종목 목록 (자산군 지정 팝업용): 새 종목 여부 + 반영 후 자산군
+    const known = new Set(state.instruments.map(i => instKey(i.symbol, i.exchange)));
+    const seenK = new Set(), fileInsts = [];
+    v.rows.forEach(r => {
+      const k = instKey(r.symbol, r.exchange);
+      if (seenK.has(k)) return;
+      seenK.add(k);
+      const inst = s.instruments.find(i => instKey(i.symbol, i.exchange) === k);
+      const old = state.instruments.find(i => instKey(i.symbol, i.exchange) === k);
+      fileInsts.push({ key: k, name: inst.name, symbol: inst.symbol, exchange: inst.exchange, currency: inst.currency, asset_type: inst.asset_type,
+        isNew: !known.has(k), group: inst.asset_group || null, oldGroup: old ? old.asset_group || null : null,
+        holdCount: s.holdings.filter(h => h.instrument_id === inst.id).length });
+    });
+    return { ...s, accounts, fileInsts, baseDate: v.baseDate, fx, model: Calc.buildModel({ ...s, accounts, prices, fx }) };
   }
   // 현재 계좌·보유 전체를 파일 내용으로 교체 (전부 반영 또는 전부 취소). 오류가 1건이라도 있으면 반영하지 않음
   async function replaceCurrentHoldings(v) {

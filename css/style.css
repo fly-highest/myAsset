@@ -333,3 +333,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .cloud-chip.ok { color: #17803d; border-color: #bfe3cb; background: #f1faf4; }
 .cloud-chip.busy { color: #a15c00; border-color: #f0d9a8; background: #fff8e6; }
 .cloud-chip.bad { color: var(--danger); border-color: #f1b0b0; background: #fdeeee; cursor: pointer; }
+.map-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

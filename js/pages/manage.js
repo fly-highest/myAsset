@@ -662,17 +662,27 @@
         m.setButtons([{ label: '다른 파일 선택', onClick: () => stepFile() }, { label: '취소' }, { label: '반영', kind: 'primary', disabled: true }]);
         return;
       }
+      showPreview(issues);
+    }
+
+    // 3단계: 반영하면 바뀔 현황 미리보기 (+ 파일 속 종목의 자산군 지정)
+    async function showPreview(issues) {
+      const { warnings } = validated;
       const pv = await DataService.previewImport(validated);
       const mode = App.mode;
+      const nNew = pv.fileInsts.filter(i => i.isNew).length, nUn = pv.fileInsts.filter(i => !i.group).length;
       m.body.innerHTML = `${steps(2)}
         <div class="status-chips"><span class="chip">파일 <b>${esc(validated.fileName)}</b></span><span class="chip">기준일자 <b>${validated.baseDate}</b></span>
           <span class="chip">계좌 <b>${pv.accounts.length}</b>개 · 보유 <b>${pv.holdings.length}</b>건</span><span class="chip">적용 환율 <b>${Fmt.fx(pv.fx)}</b> (반영 시점)</span></div>
+        <div class="notice ${nUn ? '' : 'info'} map-bar"><span>파일의 종목 <b>${pv.fileInsts.length}</b>개 · 새 종목 <b>${nNew}</b>개 · 자산군 미지정 <b class="${nUn ? 'warn-text' : ''}">${nUn}</b>개${nUn ? ' — 미지정 종목은 기타종목으로 집계됩니다' : ''}</span>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-map">자산군 지정</button></div>
         ${issues}
         <h3 class="sec-sub">업로드 현황 확인 — 반영하면 아래와 같이 바뀝니다</h3>
         ${UI.totalsCards(pv.model.total, mode, pv.fx)}
         <h3 class="sec-sub">자산군별 금액·비중</h3>${UI.groupTable(pv.model, mode, { link: false })}
         <h3 class="sec-sub">계좌 → 보유 종목</h3>${UI.holdingsTree(pv.model, mode, { editable: false, linkGroups: false, byBroker: true })}`;
       bindIssues();
+      m.body.querySelector('#btn-map').onclick = () => groupMapForm(pv.fileInsts, issues);
       m.setButtons([
         { label: '다른 파일 선택', onClick: () => stepFile() },
         { label: '취소' },
@@ -686,6 +696,42 @@
         m.footer.prepend(lab);
         lab.querySelector('#ack').onchange = e => { m.footer.querySelector('#btn-apply').disabled = !e.target.checked; };
       }
+    }
+
+    // 자산군 지정 팝업: 파일 속 종목마다 자산군 선택 → 미리보기에 바로 반영, [반영]할 때 종목 마스터에 저장
+    function groupMapForm(insts, issues) {
+      const opts = sel => `<option value="">미지정 (기타종목으로 집계)</option>${Groups.list.map(g => `<option value="${g.code}" ${sel === g.code ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}`;
+      const list = insts.slice().sort((a, b) => (!!a.group - !!b.group) || (b.isNew - a.isNew) || a.name.localeCompare(b.name, 'ko'));
+      App.modal({
+        title: '자산군 지정', size: 'mid',
+        body: `<p class="small muted" style="margin-top:0">업로드 파일에 있는 종목의 자산군을 고르세요. 미리보기에 바로 반영되고, <b>[반영]</b>을 눌러야 저장됩니다. 이미 등록된 종목의 자산군을 바꾸면 그 종목을 가진 모든 계좌에 적용됩니다.</p>
+          <div class="toolbar" style="margin-bottom:8px"><label class="small muted">미지정 종목 한꺼번에</label><select id="gm-all" class="inline"><option value="">선택…</option>${Groups.list.map(g => `<option value="${g.code}">${esc(g.name)}</option>`).join('')}</select></div>
+          <div class="tbl-wrap scroll-y" style="max-height:55vh"><table class="tbl">
+            <thead><tr><th>종목명</th><th>심볼</th><th>통화</th><th class="num">보유</th><th>자산군</th></tr></thead>
+            <tbody>${list.map(i => `<tr>
+              <td class="nm">${esc(i.name)} ${i.isNew ? '<span class="tag" title="반영하면 종목 마스터에 새로 등록됩니다">새 종목</span>' : ''}</td>
+              <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td><td>${esc(i.currency)}</td>
+              <td class="num">${i.holdCount}건</td>
+              <td><select class="inline" data-gm="${esc(i.key)}" data-was="${esc(i.group || '')}">${opts(i.group)}</select>${!i.isNew && i.oldGroup !== i.group ? ` <span class="small warn-text" title="현재 자산군">현재: ${esc(i.oldGroup ? Groups.name(i.oldGroup) : '미지정')}</span>` : ''}</td>
+            </tr>`).join('')}</tbody>
+          </table></div>`,
+        buttons: [{ label: '취소' }, {
+          label: '적용', kind: 'primary', onClick: async api => {
+            const map = { ...(validated.groupMap || {}) };
+            api.body.querySelectorAll('[data-gm]').forEach(s => { if (s.value !== s.dataset.was) map[s.dataset.gm] = s.value || null; });
+            validated.groupMap = map;
+            api.close();
+            await showPreview(issues);
+            App.toast('자산군 지정을 미리보기에 반영했습니다. [반영]을 눌러야 저장됩니다.');
+          }
+        }]
+      });
+      const body = document.querySelector('.modal-backdrop:last-child .modal-bd');
+      body.querySelector('#gm-all').onchange = e => {
+        if (!e.target.value) return;
+        body.querySelectorAll('[data-gm]').forEach(s => { if (!s.value) s.value = e.target.value; });
+        e.target.value = '';
+      };
     }
 
     function bindIssues() {
