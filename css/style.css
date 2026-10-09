@@ -329,3 +329,7 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .invest .active-plan td, .invest .active-plan .sticky-col { background: #fff1c2; font-weight: 600; }
 [hidden] { display: none !important; }
 .issue-tbl td:nth-child(4) { width: 26%; } .issue-tbl td:nth-child(5) { width: 22%; } .issue-tbl td:nth-child(6) { width: 34%; }
+.cloud-chip { font-size: 12px; color: var(--muted); padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: #fff; white-space: nowrap; cursor: default; }
+.cloud-chip.ok { color: #17803d; border-color: #bfe3cb; background: #f1faf4; }
+.cloud-chip.busy { color: #a15c00; border-color: #f0d9a8; background: #fff8e6; }
+.cloud-chip.bad { color: var(--danger); border-color: #f1b0b0; background: #fdeeee; cursor: pointer; }

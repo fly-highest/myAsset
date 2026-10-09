@@ -46,7 +46,7 @@ window.App = (function () {
     const el = document.getElementById('app-header');
     el.innerHTML = `
       <div class="hdr-inner">
-        <a class="brand" href="index.html">my<b>Asset</b> <span class="badge-mock" title="실제 DB가 아닌 Mock(가상) 데이터로 동작합니다">Mock</span></a>
+        <a class="brand" href="index.html">my<b>Asset</b>${session ? '' : ' <span class="badge-mock" title="로그인하지 않아 이 브라우저에만 저장됩니다">Mock</span>'}</a>
         <nav class="nav">${PAGES.map(p => `<a href="${p.href}" class="${p.key === pageKey ? 'active' : ''}">${p.label}</a>`).join('')}</nav>
         <div class="hdr-right">
           <span class="chip fx-chip" id="hdr-fx" title="적용 환율 (USD/KRW) — 손익 계산에 쓰는 현재 환율">$1 = <b>…</b> <span class="asof" id="hdr-asof"></span></span>
@@ -54,19 +54,38 @@ window.App = (function () {
           <div class="seg" role="group" aria-label="통화 표시">
             ${MODES.map(m => `<button type="button" data-mode="${m.code}" class="${m.code === app.mode ? 'on' : ''}">${m.label}</button>`).join('')}
           </div>
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-mock" title="이 브라우저에 저장된 Mock 변경 내용을 지우고 처음 상태로 되돌립니다">Mock 초기화</button>
+          ${session ? `<span class="cloud-chip" id="hdr-cloud"></span>` : '<button type="button" class="btn btn-ghost btn-sm" id="btn-reset-mock" title="이 브라우저에 저장된 Mock 변경 내용을 지우고 처음 상태로 되돌립니다">Mock 초기화</button>'}
           ${session ? `<span class="user-chip" title="로그인한 계정">${esc(Auth.toId(session.user.email))}</span><button type="button" class="btn btn-ghost btn-sm" id="btn-logout">로그아웃</button>` : ''}
         </div>
       </div>`;
     el.querySelector('#btn-refresh-prices').addEventListener('click', refreshPricesNow);
     const lo = el.querySelector('#btn-logout');
-    if (lo) lo.addEventListener('click', async () => { if (await confirm('로그아웃할까요?', { okLabel: '로그아웃' })) Auth.signOut(); });
+    if (lo) lo.addEventListener('click', async () => {
+      if (!(await confirm('로그아웃할까요?<br><small>데이터는 서버(Supabase)에 저장되어 있어 다시 로그인하면 그대로 보입니다.</small>', { okLabel: '로그아웃' }))) return;
+      await DataService.flushAndClearLocal(); // 남은 변경 저장 후 이 브라우저 사본 삭제
+      Auth.signOut();
+    });
+    // 서버 저장 상태 표시
+    const cloudEl = el.querySelector('#hdr-cloud');
+    if (cloudEl) DataService.onCloudStatus(s => {
+      const L = {
+        loading: ['불러오는 중…', ''], loaded: ['☁ 저장됨', 'ok'], saved: ['☁ 저장됨', 'ok'], empty: ['☁ 서버 비어 있음', ''],
+        pending: ['저장 대기…', 'busy'], saving: ['저장 중…', 'busy'], error: ['⚠ 저장 실패', 'bad'], local: ['이 브라우저만', '']
+      }[s.state] || ['', ''];
+      cloudEl.textContent = L[0];
+      cloudEl.className = 'cloud-chip ' + L[1];
+      cloudEl.title = s.state === 'error'
+        ? `서버(Supabase)에 저장하지 못했습니다: ${s.message}\n인터넷 연결을 확인하세요. 다시 연결되면 자동으로 저장을 이어갑니다. (클릭하면 다시 시도)`
+        : `데이터는 서버(Supabase)에 저장되어 다른 PC에서도 같게 보입니다.${s.at ? `\n마지막 동기화 ${Fmt.mdhm(s.at)}` : ''}`;
+    });
+    if (cloudEl) cloudEl.addEventListener('click', () => { if (DataService.getCloudStatus().state === 'error') DataService.syncFromCloud(); });
     el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
       app.mode = b.dataset.mode;
       el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === app.mode));
       rerender();
     }));
-    el.querySelector('#btn-reset-mock').addEventListener('click', async () => {
+    const rm = el.querySelector('#btn-reset-mock');
+    if (rm) rm.addEventListener('click', async () => {
       if (await confirm('Mock 데이터를 처음 상태로 되돌릴까요?<br><small>계좌·보유·자산군 변경, XLSX 업로드, 시뮬레이션 스냅샷이 모두 초기화됩니다.</small>', { okLabel: '초기화', danger: true })) {
         await DataService.resetMock();
         toast('Mock 데이터를 초기화했습니다.');
@@ -116,6 +135,7 @@ window.App = (function () {
     renderFn = fn;
     const session = window.Auth ? await Auth.require() : null;
     header(pageKey, session);
+    if (session) await DataService.syncFromCloud(); // 서버(Supabase)의 최신 데이터를 먼저 불러옴
     DataService.onChange(rerender); // 저장 즉시 화면 재계산 (19-1항)
     rerender();
     // 외부 종목 목록 정기(월 1회) 갱신 — 갱신 시각이 지났으면 자동 최신화 (새 종목명 반영)

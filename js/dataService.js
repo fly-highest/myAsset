@@ -66,6 +66,10 @@ window.DataService = (function () {
       if (raw) state = migrate(JSON.parse(raw));
     } catch (e) { /* 저장소를 못 쓰면 초기 Mock 으로 동작 */ }
     if (!state) state = seed();
+    prepare();
+  }
+  // 불러온 데이터(브라우저 저장본 또는 Supabase)를 현재 버전 형태로 맞춤
+  function prepare() {
     if (!state.targets) state.targets = clone(DEFAULT_TARGETS); // 예전 저장 데이터에는 목표 비중이 없음
     if (!state.groups) state.groups = clone(APP_CONFIG.GROUPS); // 예전 저장 데이터는 기본 7개 자산군
     Groups.set(state.groups);
@@ -90,14 +94,107 @@ window.DataService = (function () {
     });
     if (changed) { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 다음에 다시 시도 */ } }
   }
-  function commit() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('Mock 저장 실패', e); }
+  // auto: 화면을 열 때 자동으로 맞추는 변경(종목명 갱신 등) — 사용자가 바꾼 것으로 치지 않음
+  function commit({ auto = false } = {}) {
+    if (!auto) state.meta.touched = true; // 사용자가 한 번이라도 바꾼 데이터 (처음 Mock 그대로인지 구분)
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('브라우저 저장 실패', e); }
     snapCache = null;
     listeners.forEach(fn => fn());
+    schedulePush();
   }
   window.addEventListener('storage', e => {
     if (e.key === KEY) { load(); snapCache = null; listeners.forEach(fn => fn()); }
   });
+
+  // ---------------------------------------------------------------
+  // Supabase 저장 (user_state 테이블: 로그인한 사용자별 1행). 다른 PC·브라우저에서도 같은 데이터
+  // - 화면을 열면 서버 데이터를 먼저 불러오고, 바꿀 때마다 잠시 뒤 서버에 저장합니다.
+  // - 브라우저 저장소는 빠르게 열기 위한 사본(캐시)일 뿐, 기준은 서버입니다.
+  // - 다른 기기에서 먼저 저장했으면(CONFLICT) 서버의 최신 데이터로 다시 불러옵니다.
+  // ---------------------------------------------------------------
+  const SYNC_KEY = KEY + '.sync';
+  const cloud = () => (window.Auth && Auth.client) || null;
+  const readSync = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || { rev: 0, pending: false }; } catch (e) { return { rev: 0, pending: false }; } };
+  const writeSync = s => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(s)); } catch (e) { /* 무시 */ } };
+  const cloudListeners = [];
+  let cloudStatus = { state: cloud() ? 'loading' : 'local', at: null, message: '' };
+  function setCloud(st, message = '') {
+    cloudStatus = { state: st, at: st === 'saved' || st === 'loaded' ? nowISO() : cloudStatus.at, message };
+    cloudListeners.forEach(fn => fn(cloudStatus));
+  }
+  function onCloudStatus(fn) { cloudListeners.push(fn); fn(cloudStatus); }
+  function getCloudStatus() { return { ...cloudStatus }; }
+  const isPristine = () => !state.meta.touched && state.meta.baseSource === 'Mock 초기 데이터' && !state.meta.importBackup;
+  function useServerData(row) {
+    const s = migrate(clone(row.data));
+    if (!s) throw new Error('서버 데이터 형식을 읽지 못했습니다.');
+    state = s;
+    prepare();
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 무시 */ }
+    writeSync({ rev: row.rev, pending: false });
+    snapCache = null;
+  }
+  let pushTimer = null, pushing = null;
+  function schedulePush() {
+    if (!cloud()) return;
+    if (!readSync().rev && isPristine()) return; // 처음 Mock 그대로인 브라우저는 서버에 올리지 않음
+    writeSync({ ...readSync(), pending: true });
+    setCloud('pending');
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => { pushNow(); }, 700);
+  }
+  async function pushNow() {
+    const c = cloud();
+    if (!c) return;
+    clearTimeout(pushTimer);
+    pushTimer = null;
+    if (pushing) await pushing.catch(() => {});
+    pushing = (async () => {
+      const sync = readSync();
+      if (!sync.pending && sync.rev) return;
+      setCloud('saving');
+      const { data: rev, error } = await c.rpc('save_user_state', { p_data: state, p_rev: sync.rev || 0 });
+      if (!error) { writeSync({ rev, pending: false }); setCloud('saved'); return; }
+      if (/CONFLICT/.test(error.message)) {
+        // 다른 기기가 먼저 저장 → 서버 최신본으로 교체 (방금 변경은 반영되지 않음)
+        const { data: row } = await c.from('user_state').select('data,rev').maybeSingle();
+        if (row) { useServerData(row); listeners.forEach(fn => fn()); }
+        setCloud('saved');
+        if (window.App) App.alert('다른 기기(또는 다른 창)에서 먼저 저장한 내용이 있어 <b>서버의 최신 데이터로 다시 불러왔습니다.</b><br><small>방금 바꾼 내용은 저장되지 않았으니 화면을 확인한 뒤 다시 해 주세요.</small>', '최신 데이터로 갱신');
+        return;
+      }
+      setCloud('error', error.message);
+    })();
+    try { await pushing; } catch (e) { setCloud('error', e.message); } finally { pushing = null; }
+  }
+  // 서버에서 불러오기 (화면을 열 때, 다른 창에서 돌아올 때)
+  async function syncFromCloud() {
+    const c = cloud();
+    if (!c) return;
+    if (pushing) await pushing.catch(() => {});
+    try {
+      const { data: row, error } = await c.from('user_state').select('data,rev').maybeSingle();
+      if (error) throw new Error(error.message);
+      const sync = readSync();
+      if (!row) {
+        // 서버에 아직 데이터가 없음 → 이 브라우저에 실제로 쓰던 데이터가 있으면 처음으로 올림
+        if (!isPristine()) { writeSync({ rev: 0, pending: true }); await pushNow(); }
+        else setCloud('empty');
+        return;
+      }
+      if (sync.pending && sync.rev === row.rev) { await pushNow(); return; } // 저장 못 하고 남은 변경 → 이어서 저장
+      if (sync.pending && window.App) App.toast('이 브라우저에서 저장하지 못한 변경이 있었지만, 다른 기기에서 바뀐 서버 데이터를 우선 불러왔습니다.', 'error');
+      if (row.rev !== sync.rev || sync.pending) { useServerData(row); listeners.forEach(fn => fn()); }
+      setCloud('loaded');
+    } catch (e) { setCloud('error', e.message); }
+  }
+  // 로그아웃 전: 남은 변경을 저장하고 이 브라우저의 사본을 지움
+  async function flushAndClearLocal() {
+    if (readSync().pending) await pushNow();
+    try { localStorage.removeItem(KEY); localStorage.removeItem(SYNC_KEY); } catch (e) { /* 무시 */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && cloud() && !pushTimer) syncFromCloud(); });
+  window.addEventListener('beforeunload', e => { if (cloud() && readSync().pending) { pushNow(); e.preventDefault(); e.returnValue = ''; } });
   function markChanged(manual) {
     state.meta.changedSinceSnapshot = true;
     if (manual) { state.meta.baseDate = Fmt.todayKST(); state.meta.baseSource = '직접 수정'; }
@@ -517,7 +614,7 @@ window.DataService = (function () {
     const renamed = await applyCatalogNames();
     const info = await getCatalogInfo();
     state.meta.catalogSyncedAt = info.syncedAt || nowISO();
-    commit();
+    commit({ auto: true });
     return { ...info, renamed };
   }
   // 페이지를 열 때: 서버의 정기 갱신(매월) 이후 처음이면 등록 종목 이름을 새 이름으로 맞춤
@@ -527,7 +624,7 @@ window.DataService = (function () {
     if (!info.syncedAt || info.syncedAt === state.meta.catalogSyncedAt) return null;
     const renamed = await applyCatalogNames();
     state.meta.catalogSyncedAt = info.syncedAt;
-    commit();
+    commit({ auto: true });
     return { ...info, renamed };
   }
   // 종목 검색: 이미 등록된 종목(registered) + 전체 종목 목록에서 찾은 종목
@@ -1172,7 +1269,7 @@ window.DataService = (function () {
   load();
 
   return {
-    onChange, resetMock, getStatus,
+    onChange, resetMock, getStatus, syncFromCloud, pushNow, flushAndClearLocal, onCloudStatus, getCloudStatus,
     getAccounts, addAccount, updateAccount, deleteAccount,
     getTargetPlans, saveTargetPlan, setGroupTargets, deleteTargetPlan, resetTargetPlans,
     getBrokers, getAccountTypes, addMaster, updateMaster, deleteMaster,
