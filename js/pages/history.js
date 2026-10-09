@@ -1,9 +1,10 @@
 // 이력 (history.html) — 과거 스냅샷 조회 (17~21항)
 (function () {
-  let range = '3M';
+  let range = '3M'; // 'CUSTOM' 이면 custom.from ~ custom.to
+  let custom = { from: '', to: '' };
   let selectedId = null;
   let tab = 'group';
-  const RANGES = [['1M', '1개월'], ['3M', '3개월'], ['6M', '6개월'], ['1Y', '1년'], ['ALL', '전체']];
+  const RANGES = [['1W', '1주'], ['1M', '1개월'], ['3M', '3개월'], ['6M', '6개월'], ['1Y', '1년'], ['ALL', '전체']];
   const modelCache = new Map();
 
   async function snapModel(s) {
@@ -13,7 +14,10 @@
 
   async function render() {
     const mode = App.mode;
-    const [status, snaps, cur] = await Promise.all([DataService.getStatus(), DataService.getSnapshots(range), App.loadCurrentModel()]);
+    const [status, snaps, cur] = await Promise.all([DataService.getStatus(), DataService.getSnapshots(range === 'CUSTOM' ? custom : range), App.loadCurrentModel()]);
+    const today = Fmt.todayKST();
+    const fromVal = range === 'CUSTOM' ? custom.from : (snaps[0] ? snaps[0].snapshot_date : '');
+    const toVal = range === 'CUSTOM' ? custom.to : today;
     const models = await Promise.all(snaps.map(snapModel));
     if (!snaps.find(s => s.id === selectedId)) selectedId = snaps.length ? snaps[snaps.length - 1].id : null;
     const selIdx = snaps.findIndex(s => s.id === selectedId);
@@ -47,11 +51,16 @@
       ${App.statusBar(status, { showBase: false })}
       <div class="sec toolbar">
         <div class="period">${RANGES.map(([k, l]) => `<button type="button" data-range="${k}" class="${k === range ? 'on' : ''}">${l}</button>`).join('')}</div>
-        <span class="small muted">${snaps.length}일 · ${snaps.length ? `${snaps[0].snapshot_date} ~ ${last.snapshot_date}` : ''}</span>
+        <div class="toolbar date-range">
+          <input type="date" id="d-from" value="${fromVal}" max="${today}" aria-label="시작일">
+          <span class="muted">~</span>
+          <input type="date" id="d-to" value="${toVal}" max="${today}" aria-label="종료일">
+        </div>
+        <span class="small muted">${snaps.length}일${snaps.length ? ` · ${snaps[0].snapshot_date} ~ ${last.snapshot_date}` : ' · 해당 기간에 스냅샷이 없습니다'}</span>
       </div>
       <div class="sec grid-2e">
         <div class="card pad"><div class="sec-hd"><h2>총 평가금액 · 투자금액 추이</h2></div><div class="chart-box"><canvas id="ch-trend"></canvas></div></div>
-        <div class="card pad"><div class="sec-hd"><h2>자산군 비중 추이</h2><span class="small muted">당시 분류 · 원화 환산 기준</span></div><div class="chart-box"><canvas id="ch-share"></canvas></div></div>
+        <div class="card pad"><div class="sec-hd"><h2>자산군 비중 추이</h2><span class="small muted">${mode === 'USD' ? '당시 분류 · 달러 환산(당시 환율)' : mode === 'KRW' ? '당시 분류 · 원화 환산' : '당시 분류 · 혼합 모드는 통화를 합치지 않아 비중(%)으로 표시'}</span></div><div class="chart-box"><canvas id="ch-share"></canvas></div></div>
       </div>
       <div class="sec">
         <div class="sec-hd"><h2>최신 스냅샷 vs 현재 현황</h2></div>
@@ -69,6 +78,15 @@
 
     const main = document.getElementById('main');
     main.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { range = b.dataset.range; App.rerender(); });
+    const onDate = () => {
+      let f = main.querySelector('#d-from').value, t = main.querySelector('#d-to').value || today;
+      if (f && t && f > t) [f, t] = [t, f];
+      custom = { from: f, to: t };
+      range = 'CUSTOM';
+      App.rerender();
+    };
+    main.querySelector('#d-from').onchange = onDate;
+    main.querySelector('#d-to').onchange = onDate;
     main.querySelectorAll('[data-snap]').forEach(tr => tr.onclick = () => { selectedId = tr.dataset.snap; App.rerender(); });
     main.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; App.rerender(); });
     main.querySelector('#btn-sim').onclick = async () => {
@@ -82,7 +100,7 @@
     };
 
     Charts.trend('ch-trend', await Charts.snapshotSeries(snaps, mode));
-    Charts.groupShare('ch-share', snaps);
+    Charts.groupShare('ch-share', snaps, models, mode);
   }
 
   function detail(s, m, mode) {

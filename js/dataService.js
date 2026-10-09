@@ -240,14 +240,18 @@ window.DataService = (function () {
     }
     return snapCache.list;
   }
-  // range: '1M' | '3M' | '6M' | '1Y' | 'ALL'
+  // range: '1W' | '1M' | '3M' | '6M' | '1Y' | 'ALL' | { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } (양 끝 포함)
   async function getSnapshots(range) {
     const list = allSnapshots();
     if (!list.length) return [];
+    if (range && typeof range === 'object') {
+      return list.filter(s => (!range.from || s.snapshot.snapshot_date >= range.from) && (!range.to || s.snapshot.snapshot_date <= range.to)).map(s => s.snapshot);
+    }
     const lastDate = list[list.length - 1].snapshot.snapshot_date;
     const months = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12 }[range];
     let from = null;
-    if (months) {
+    if (range === '1W') from = Fmt.addDays(lastDate, -7);
+    else if (months) {
       const d = new Date(lastDate + 'T00:00:00Z');
       d.setUTCMonth(d.getUTCMonth() - months);
       from = d.toISOString().slice(0, 10);

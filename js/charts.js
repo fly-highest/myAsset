@@ -111,17 +111,26 @@ window.Charts = (function () {
     });
   }
 
-  // 자산군 비중 추이 (100% 누적, 원화 환산 기준 — 통화 모드와 무관)
-  function groupShare(canvasId, snaps) {
+  // 자산군 비중 추이 (당시 분류). 원화환산 = ₩ 누적, 달러환산 = 당시 환율로 나눈 $ 누적,
+  // 혼합 모드 = 통화를 합칠 수 없어 비중(%) 누적. 비중 값 자체는 어느 모드든 원화 환산 기준입니다.
+  function groupShare(canvasId, snaps, models, mode) {
     const labels = snaps.map(s => s.snapshot_date);
+    const asPct = mode === 'MIXED';
+    const cur = mode === 'USD' ? 'USD' : 'KRW';
+    const valueOf = (m, code) => {
+      const k = m.groups[code].agg.valK;
+      if (asPct) return m.total.valK ? (k / m.total.valK) * 100 : 0;
+      return cur === 'USD' ? (m.fx ? k / m.fx : 0) : k;
+    };
+    const shareOf = (i, code) => (models[i].total.valK ? (models[i].groups[code].agg.valK / models[i].total.valK) * 100 : 0);
     return UI.chart(canvasId, {
       type: 'line',
       data: {
         labels,
         datasets: Groups.list.map(g => ({
-          label: g.name, fill: true, pointRadius: 0, borderWidth: 1, tension: 0.1,
+          label: g.name, code: g.code, fill: true, pointRadius: 0, borderWidth: 1, tension: 0.1,
           borderColor: g.color, backgroundColor: g.color + 'b3',
-          data: snaps.map(s => (s.total_value_krw ? (s.group_values[g.code] / s.total_value_krw) * 100 : 0))
+          data: models.map(m => valueOf(m, g.code))
         }))
       },
       options: {
@@ -129,11 +138,16 @@ window.Charts = (function () {
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { position: 'bottom', labels: { boxWidth: 12 } },
-          tooltip: { callbacks: { label: c => `${c.dataset.label}: ${Fmt.weight(c.parsed.y)}` } }
+          tooltip: { callbacks: { label: c => {
+            const w = Fmt.weight(shareOf(c.dataIndex, c.dataset.code));
+            return asPct ? ` ${c.dataset.label}: ${w}` : ` ${c.dataset.label}: ${Fmt.money(c.parsed.y, cur)} (${w})`;
+          } } }
         },
         scales: {
           x: { ticks: { maxTicksLimit: 8, callback: function (v) { return Fmt.md(this.getLabelForValue(v)); } }, grid: { display: false } },
-          y: { stacked: true, min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#eef1f5' } }
+          y: asPct
+            ? { stacked: true, min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#eef1f5' } }
+            : { stacked: true, min: 0, ticks: { callback: tick(cur) }, grid: { color: '#eef1f5' } }
         }
       }
     });
