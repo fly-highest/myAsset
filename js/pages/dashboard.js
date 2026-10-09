@@ -1,7 +1,7 @@
 // Dashboard (index.html) — 전체 요약, 조회 전용 (10항)
 (function () {
   async function render() {
-    const { model, status, fxInfo } = await App.loadCurrentModel();
+    const { model, status } = await App.loadCurrentModel();
     const mode = App.mode;
     const total = model.total.valK;
 
@@ -17,7 +17,7 @@
       ${App.statusBar(status)}
       <div class="sec">
         ${UI.totalsCards(model.total, mode, model.fx)}
-        <div class="small muted" style="margin-top:6px">적용 환율 USD/KRW ${Fmt.fx(fxInfo.rate)} · 비중은 통화 모드와 관계없이 원화 환산 평가금액 기준</div>
+        <div class="small muted" style="margin-top:6px">비중은 통화 모드와 관계없이 원화 환산 평가금액 기준</div>
       </div>
       <div class="sec grid-2">
         <div>

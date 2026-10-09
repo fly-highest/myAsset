@@ -64,16 +64,48 @@ window.Charts = (function () {
     });
   }
 
+  // 자산군 비중 도넛: 조각 안에 '이름 + 비중' 표시. 조각이 작으면 글자를 생략하고 마우스를 올리면 전체가 보입니다.
   function doughnut(canvasId, labels, values, colors) {
     const total = values.reduce((a, b) => a + b, 0);
+    const share = v => (total ? (v / total) * 100 : 0);
+    const sliceLabels = {
+      id: 'sliceLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        chart.getDatasetMeta(0).data.forEach((arc, i) => {
+          const p = share(values[i]);
+          if (p < 5) return; // 작은 조각은 툴팁으로만
+          const { x, y } = arc.tooltipPosition();
+          ctx.save();
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.shadowColor = 'rgba(0,0,0,.35)';
+          ctx.shadowBlur = 3;
+          ctx.font = '600 12px "Pretendard","Malgun Gothic",sans-serif';
+          ctx.fillText(labels[i], x, y - 7);
+          ctx.font = '500 11.5px "Pretendard","Malgun Gothic",sans-serif';
+          ctx.fillText(Fmt.weight(p), x, y + 8);
+          ctx.restore();
+        });
+      }
+    };
     return UI.chart(canvasId, {
       type: 'doughnut',
       data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 1, borderColor: '#fff' }] },
+      plugins: [sliceLabels],
       options: {
-        responsive: true, maintainAspectRatio: false, animation: false, cutout: '58%',
+        responsive: true, maintainAspectRatio: false, animation: false, cutout: '45%',
         plugins: {
-          legend: { position: 'right', labels: { boxWidth: 12 } },
-          tooltip: { callbacks: { label: c => `${c.label}: ${Fmt.weight(total ? (c.parsed / total) * 100 : 0)}` } }
+          legend: {
+            position: 'right',
+            labels: {
+              boxWidth: 12,
+              generateLabels: chart => Chart.overrides.doughnut.plugins.legend.labels.generateLabels(chart)
+                .map(l => ({ ...l, text: `${labels[l.index]}  ${Fmt.weight(share(values[l.index]))}` }))
+            }
+          },
+          tooltip: { callbacks: { label: c => ` ${c.label}: ${Fmt.weight(share(c.parsed))} (${Fmt.krw(c.parsed)})` } }
         }
       }
     });

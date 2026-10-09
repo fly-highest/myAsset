@@ -41,13 +41,16 @@ window.UI = (function () {
     const lbl = p => (mode === 'MIXED' ? `<span class="lbl">${p.cur === 'KRW' ? '한국자산 총합' : '미국자산 총합'}</span>` : '');
     const lines = (fn) => v.parts.map(p => `<div class="stat-v">${lbl(p)}${fn(p)}</div>`).join('');
     const split = v.split ? `<div class="stat-sub">가격손익 <span class="${Fmt.cls(v.split.priceP, 'KRW')}">${Fmt.signedMoney(v.split.priceP, 'KRW')}</span> · 환차손익 <span class="${Fmt.cls(v.split.fxP, 'KRW')}">${Fmt.signedMoney(v.split.fxP, 'KRW')}</span></div>` : '';
+    // 수익률 분해: 가격손익·환차손익 ÷ 합계 투자금액 (두 값의 합 = 총 수익률)
+    const rp = Calc.pct(agg.priceP, agg.invK), rf = Calc.pct(agg.fxP, agg.invK);
+    const retSplit = v.split ? `<div class="stat-sub">가격 <span class="${Fmt.cls(rp, 'PCT')}">${Fmt.pct(rp)}</span> · 환차 <span class="${Fmt.cls(rf, 'PCT')}">${Fmt.pct(rf)}</span></div>` : '';
     const note = mode === 'MIXED' ? '<div class="stat-sub">혼합 모드는 통화별로 나눠 표시합니다 (합산하지 않음)</div>' : '';
     return `${title ? `<h3 class="sec-sub">${title}</h3>` : ''}
       <div class="stats">
         <div class="card stat"><div class="stat-t">총 평가금액</div>${lines(p => Fmt.money(p.val, p.cur))}${note}</div>
         <div class="card stat"><div class="stat-t">총 투자금액</div>${lines(p => Fmt.money(p.inv, p.cur))}</div>
         <div class="card stat"><div class="stat-t">총 손익</div>${lines(p => `<span class="${Fmt.cls(p.prof, p.cur)}">${Fmt.signedMoney(p.prof, p.cur)}</span>`)}${split}</div>
-        <div class="card stat"><div class="stat-t">총 수익률</div>${lines(p => `<span class="${Fmt.cls(p.ret, 'PCT')}">${Fmt.pct(p.ret)}</span>`)}<div class="stat-sub">합계 손익 ÷ 합계 투자금액</div></div>
+        <div class="card stat"><div class="stat-t">총 수익률</div>${lines(p => `<span class="${Fmt.cls(p.ret, 'PCT')}">${Fmt.pct(p.ret)}</span>`)}${retSplit}<div class="stat-sub">합계 손익 ÷ 합계 투자금액</div></div>
       </div>`;
   }
 

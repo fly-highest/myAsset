@@ -32,12 +32,14 @@ window.App = (function () {
         <a class="brand" href="index.html">my<b>Asset</b> <span class="badge-mock" title="실제 DB가 아닌 Mock(가상) 데이터로 동작합니다">Mock</span></a>
         <nav class="nav">${PAGES.map(p => `<a href="${p.href}" class="${p.key === pageKey ? 'active' : ''}">${p.label}</a>`).join('')}</nav>
         <div class="hdr-right">
+          <span class="chip fx-chip" id="hdr-fx" title="손익 계산에 쓰는 현재 환율">적용 환율 USD/KRW <b>…</b></span>
           <div class="seg" role="group" aria-label="통화 표시">
             ${MODES.map(m => `<button type="button" data-mode="${m.code}" class="${m.code === app.mode ? 'on' : ''}">${m.label}</button>`).join('')}
           </div>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-mock" title="이 브라우저에 저장된 Mock 변경 내용을 지우고 처음 상태로 되돌립니다">Mock 초기화</button>
         </div>
       </div>`;
+    DataService.getFxRate().then(fx => { el.querySelector('#hdr-fx b').textContent = Fmt.fx(fx.rate); });
     el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
       app.mode = b.dataset.mode;
       el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === app.mode));
