@@ -31,7 +31,7 @@ window.UI = (function () {
   const w = (part, whole) => (whole ? (part / whole) * 100 : 0);
 
   // 현재가 칸: 마우스를 올리면 기준 시각·출처, 예시(Mock) 가격이면 [예시] 표시
-  const SRC = { GOOGLE: 'Google Finance', UPBIT: '업비트', GOLD: '국제 금시세 × 환율', MOCK: '예시 가격(Mock)' };
+  const SRC = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 × 환율', MOCK: '예시 가격(Mock)' };
   function priceCell(cp, inst, meta, noPrice) {
     if (inst.asset_type === 'CASH' || noPrice) return '<span class="muted">—</span>';
     if (!meta) return Fmt.price(cp, inst.currency);

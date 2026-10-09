@@ -10,7 +10,7 @@
 //   GOOGLE : Google 시트의 GOOGLEFINANCE 결과 (웹에 게시한 CSV, 비밀값 GSHEET_CSV_URL 또는 app_settings)
 //   NAVER  : 국내 ETF 중 Google 시세가 없는 종목은 네이버 금융 ETF 시세로 대체
 //   UPBIT  : 업비트 공개 시세 API (원화 마켓)
-//   GOLD   : KRX 금현물(1g) = 국제 금시세(XAU/USD, 온스) ÷ 31.1034768 × USD/KRW
+//   GOLD   : KRX 금현물(원/g) = 네이버 금융 KRX 금 시세 (실패 시 국제 금시세 ÷ 31.1034768 × USD/KRW)
 //   환율·금시세가 Google 에 없으면: 환율 open.er-api.com(일 1회), 금 api.gold-api.com(실시간)
 //   CASH   : 항상 1 (저장하지 않음)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -176,10 +176,22 @@ Deno.serve(async (req) => {
     else fail(t, `업비트 시세 없음 (${t.upbit_market})`);
   }
 
-  // 2-3) 금현물: 국제 금시세를 현재 환율로 원화(1g) 환산
+  // 2-3) KRX 금현물(원/g): 네이버 금융의 KRX 금 시세(기준 시각 = 실제 체결 시각)
+  //      네이버를 못 받으면 국제 금시세 × 환율로 환산 (국내 가격과 1~2% 차이 날 수 있음)
   for (const t of targets.filter((t) => t.source === 'GOLD')) {
+    let done = false;
+    try {
+      const r = await fetch('https://api.stock.naver.com/marketindex/metals/' + encodeURIComponent(t.symbol), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const d = await r.json();
+      const p = toNum(d?.closePrice);
+      if (p) {
+        rows.push({ symbol: t.symbol, exchange: t.exchange, price: p, currency: 'KRW', source: 'NAVER', as_of: d.localTradedAt ? new Date(d.localTradedAt).toISOString() : now, updated_at: now });
+        done = true;
+      }
+    } catch { /* 아래 국제 금시세 환산으로 대체 */ }
+    if (done) continue;
     if (xau && fx) rows.push({ symbol: t.symbol, exchange: t.exchange, price: Math.round((xau / TROY_OUNCE_G) * fx * 100) / 100, currency: 'KRW', source: 'GOLD', as_of: now, updated_at: now });
-    else fail(t, '국제 금시세 또는 환율이 없어 계산하지 못했습니다');
+    else fail(t, '네이버 금 시세와 국제 금시세를 모두 받지 못했습니다');
   }
 
   // 3) 저장

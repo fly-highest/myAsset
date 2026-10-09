@@ -71,7 +71,7 @@ window.App = (function () {
   }
 
   // ---------------- 현재가 기준 시각 표시 + [↻ 시세 갱신] ----------------
-  const SOURCE_NAME = { GOOGLE: 'Google Finance', UPBIT: '업비트', GOLD: '국제 금시세 환산', MOCK: '예시 가격(Mock)' };
+  const SOURCE_NAME = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 환산', ER_API: 'open.er-api.com (일 1회)', MOCK: '예시 가격(Mock)' };
   async function updatePriceInfo() {
     const st = await DataService.getPriceStatus();
     const fxB = document.querySelector('#hdr-fx b'), asof = document.querySelector('#hdr-asof');
