@@ -171,6 +171,10 @@
       check('DB 일관성: 종목명·통화가 DB 와 다르면 오류 + DB 값 표시', eName && eName.value === '삼성전자보통주' && eName.expected === '삼성전자' && eCur && eCur.expected === 'KRW', `${eName && eName.value} → DB ${eName && eName.expected} / 통화 → DB ${eCur && eCur.expected}`);
       check('DB 일관성: DB 에 없는 심볼·거래소 불일치·마스터에 없는 증권사 → 오류', !!dbErr('심볼', 'DB(종목 마스터') && !!dbErr('거래소', '거래소가 DB와 다릅니다') && !!dbErr('증권사', 'DB(증권 마스터)'),
         [dbErr('거래소', '거래소가 DB와 다릅니다'), dbErr('증권사', 'DB(증권 마스터)')].map(e => e && `${e.value} → DB ${e.expected}`).join(' / '));
+      // 현금 평균매입가·KRW 매입평균환율이 1이 아니면 경고만 주고 1로 반영
+      v = await upload(fileFromRows(today, [['키움 일반', '키움증권', '', 'CASH-KRW', '', '', '', '', 500000, 1000, '', ''], ['키움 일반', '키움증권', '', '005930', '', '', '', '', 1, 70000, 1000, '']]));
+      check('현금 평균매입가·KRW 매입평균환율 ≠ 1 → 경고 후 1로 반영', v.errors.length === 0 && v.warnings.filter(w => w.reason.includes('1로 바꿔서 반영')).length === 2 && v.rows[0].avg_price === 1 && v.rows[1].avg_fx_rate === 1,
+        `오류 ${v.errors.length} · 경고 ${v.warnings.map(w => w.col).join(', ')}`);
       // 자동 입력 칸(종목명·거래소·자산유형·통화)이 비어 있어도 심볼로 DB 값을 채움
       v = await upload(fileFromRows(today, [['키움 일반', '키움증권', '', 'QQQ', '', '', '', '', 1, 500, 1300, ''], ['키움 일반', '키움증권', '', '005930', '', '', '', '', 1, 70000, '', '']]));
       check('자동 입력 칸이 비어 있어도 심볼로 DB 값 사용', v.errors.length === 0 && v.rows[0].name === 'QQQ' && v.rows[1].exchange === 'KRX' && v.rows[1].currency === 'KRW', `오류 ${v.errors.length}`);

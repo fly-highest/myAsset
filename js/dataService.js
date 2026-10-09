@@ -426,6 +426,15 @@ window.DataService = (function () {
   const REQUIRED_HEADERS = ['계좌명', '증권사', '심볼', '수량', '평균매입가', '매입평균환율'];
   const AUTO_COLS = { '종목명': 2, '거래소': 3, '자산유형': 4, '통화': 5 }; // 심볼로 자동 입력되는 칸 → 종목목록 시트의 열 번호
   const EXTRA_ROWS = 200; // 내려받은 파일에 새 종목을 적을 수 있도록 미리 준비하는 빈 줄 수
+  // 내려받는 엑셀 머리글에 붙는 도움말 (셀에 마우스를 올리면 보임)
+  const HEADER_NOTES = {
+    '증권사': '목록에서 고릅니다 (선택목록 시트 = 증권 마스터).',
+    '계좌종류': '목록에서 고릅니다. 비우면 같은 이름 계좌의 기존 값을 유지합니다.',
+    '심볼': '종목코드를 입력하면 종목명·거래소·자산유형·통화가 자동으로 채워집니다 (종목목록 시트 참고).',
+    '수량': '0보다 큰 숫자. 현금은 금액을 수량에 적습니다.',
+    '평균매입가': '원본통화 기준 평균단가.\n현금은 1 (다른 값을 적어도 업로드 시 경고 후 1로 바꿔 반영).',
+    '매입평균환율': 'USD 종목: 달러를 산 평균환율 (필수, 0보다 큼).\nKRW 종목: 비우거나 1 (다른 값을 적어도 업로드 시 경고 후 1로 바꿔 반영).'
+  };
   const pad = n => String(n).padStart(2, '0');
 
   function cleanNum(v) {
@@ -574,15 +583,15 @@ window.DataService = (function () {
       const q = cleanNum(raw['수량']);
       numCheck('수량', q, v => v > 0, '수량은 0보다 커야 합니다');
       const ap = cleanNum(raw['평균매입가']);
-      numCheck('평균매입가', ap, v => v >= 0, '평균매입가는 0 이상이어야 합니다');
-      if (isCash && ap !== null && !isNaN(ap) && ap !== 1) err('평균매입가', '현금 행의 평균매입가는 1이어야 합니다', '1');
+      if (!isCash) numCheck('평균매입가', ap, v => v >= 0, '평균매입가는 0 이상이어야 합니다');
+      if (isCash && ap !== null && ap !== 1) warn('평균매입가', '현금 행의 평균매입가는 1로 바꿔서 반영합니다');
       const fxv = cleanNum(raw['매입평균환율']);
       if (currency === 'USD') {
         if (fxv === null) err('매입평균환율', 'USD 종목은 매입평균환율이 필요합니다');
         else if (isNaN(fxv)) err('매입평균환율', '숫자가 아닙니다');
         else if (fxv <= 0) err('매입평균환율', '매입평균환율은 0보다 커야 합니다');
-      } else if (currency === 'KRW' && fxv !== null && fxv !== 1) {
-        err('매입평균환율', 'KRW 종목의 매입평균환율은 비우거나 1이어야 합니다', '비움 또는 1');
+      } else if (currency === 'KRW' && fxv !== null && (isNaN(fxv) || fxv !== 1)) {
+        warn('매입평균환율', 'KRW 종목의 매입평균환율은 1로 바꿔서 반영합니다');
       }
 
       rows.push({
@@ -718,6 +727,7 @@ window.DataService = (function () {
       c.value = h in AUTO_COLS ? `${h}(자동)` : h;
       c.font = bold;
       c.fill = h in AUTO_COLS ? autoFill : headFill;
+      if (HEADER_NOTES[h]) c.note = HEADER_NOTES[h];
     });
     [14, 13, 12, 12, 30, 9, 9, 7, 14, 14, 13, 34].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
     const brokers = bySort(state.brokers), types = bySort(state.accountTypes);
