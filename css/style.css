@@ -281,3 +281,4 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .date-box .cal-btn { border: 0; background: none; padding: 4px 8px 4px 2px; cursor: pointer; color: var(--muted); display: inline-flex; }
 .date-box .cal-btn:hover { color: var(--primary); }
 .date-box .date-pick { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+.pick-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }

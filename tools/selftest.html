@@ -190,6 +190,14 @@
       check('외부 목록 종목 선택 → 종목 마스터 등록 (중복 없이)', aapl.id && aapl.asset_group === null && found.length === 1 && found[0].registered);
       const rp = (await DS.searchCatalog('RP')).find(x => x.symbol === 'RP-USD');
       check('달러 RP 는 현금성(USD) 항목', rp && rp.asset_type === 'CASH' && rp.currency === 'USD');
+      // 외부 목록에서 종목명이 바뀐 경우 → 최신화 시 새 이름 반영, 보유·자산군은 그대로
+      const kodex = MOCK.catalog.items.find(x => x.symbol === '379800');
+      const oldName = kodex.name; kodex.name = 'KODEX 미국S&P500(새이름)';
+      const hBefore = JSON.stringify((await DS.getHoldings()).filter(h => h.instrument_id === 'ins-kodex-sp500'));
+      const sr = await DS.syncCatalog();
+      const kInst = (await DS.getInstruments()).find(i => i.id === 'ins-kodex-sp500');
+      check('목록 최신화 → 같은 코드 종목은 새 종목명으로 갱신, 보유·자산군 유지', kInst.name === 'KODEX 미국S&P500(새이름)' && kInst.asset_group === 'SP500' && JSON.stringify((await DS.getHoldings()).filter(h => h.instrument_id === 'ins-kodex-sp500')) === hBefore && sr.renamed.length === 1, sr.renamed.map(x => `${x.from} → ${x.to}`).join(', '));
+      kodex.name = oldName;
       const ci = await DS.getCatalogInfo();
       check('다음 갱신 = 마지막 갱신 + 1개월', new Date(ci.nextSyncAt).getMonth() === (new Date(ci.syncedAt).getMonth() + 1) % 12, `${ci.syncedAt} → ${ci.nextSyncAt}`);
 

@@ -237,7 +237,10 @@ window.UI = (function () {
         body: `${note ? `<p class="small muted" style="margin-top:0">${note}</p>` : ''}
           <input type="search" id="pick-q" placeholder="이름 / 심볼 / 영문명으로 검색 (예: QQQ, 나스닥, Samsung)" autocomplete="off">
           <div class="search-list" id="pick-list"></div>
-          ${allowNew ? '<div class="small muted" style="margin-top:10px">외부 종목 목록에도 없나요? <button type="button" class="btn btn-sm" id="pick-new">+ 직접 등록</button></div>' : ''}`,
+          <div class="pick-foot small muted">
+            <span>${allowNew ? '외부 종목 목록에도 없나요? <button type="button" class="btn btn-sm" id="pick-new">+ 직접 등록</button>' : ''}</span>
+            <span><span id="pick-sync-info"></span> <button type="button" class="btn btn-sm" id="pick-sync" title="외부 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button></span>
+          </div>`,
         onClose: () => { if (!resolved) resolve(null); },
         buttons: [
           { label: '취소' },
@@ -267,6 +270,19 @@ window.UI = (function () {
       m.body.querySelector('#pick-q').addEventListener('input', search);
       const nb = m.body.querySelector('#pick-new');
       if (nb) nb.addEventListener('click', () => finish(m, { __new: true }));
+      // 목록 최신화: 외부 목록을 지금 다시 받아오고 새 종목명을 반영한 뒤 검색 결과를 다시 보여 줍니다
+      const info = m.body.querySelector('#pick-sync-info');
+      const showInfo = async () => { const c = await DataService.getCatalogInfo(); info.textContent = `${c.count}개 · 갱신 ${Fmt.mdhm(c.syncedAt)}`; };
+      m.body.querySelector('#pick-sync').addEventListener('click', async e => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        const r = await DataService.syncCatalog();
+        btn.disabled = false;
+        await showInfo();
+        await search();
+        App.toast(r.renamed.length ? `목록을 최신화했습니다. 종목명 변경 ${r.renamed.length}건: ${r.renamed.map(x => `${x.from} → ${x.to}`).join(', ')}` : '목록을 최신화했습니다. 바뀐 종목명은 없습니다.');
+      });
+      showInfo();
       search();
     });
   }

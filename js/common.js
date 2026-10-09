@@ -74,6 +74,8 @@ window.App = (function () {
     header(pageKey);
     DataService.onChange(rerender); // 저장 즉시 화면 재계산 (19-1항)
     rerender();
+    // 외부 종목 목록 정기(월 1회) 갱신 — 갱신 시각이 지났으면 자동 최신화 (새 종목명 반영)
+    DataService.autoSyncCatalogIfDue().then(r => { if (r && r.renamed.length) toast(`종목 목록을 정기 갱신했습니다. 종목명 변경 ${r.renamed.length}건 반영`); }).catch(() => {});
   }
 
   // ---------------- 모달 ----------------

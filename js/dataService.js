@@ -127,11 +127,30 @@ window.DataService = (function () {
     next.setMonth(next.getMonth() + 1);
     return { count: MOCK.catalog.items.length, syncedAt, nextSyncAt: next.toISOString() };
   }
-  // Mock: 갱신 시각만 기록 (실제로는 외부 목록을 받아 DB 의 목록을 교체)
+  // 목록 최신화: 외부 목록을 다시 받아 저장하고, 이미 등록된 종목은 심볼+거래소가 같으면 새 종목명으로 바꿉니다.
+  // (Mock: 외부 목록 = mock/catalog.js. 실제로는 외부에서 받아 DB 의 목록을 교체)
+  // 보유·자산군은 종목 고유번호(id)로 연결되어 있어 이름이 바뀌어도 그대로 유지됩니다. 과거 스냅샷은 당시 이름 그대로.
   async function syncCatalog() {
+    const renamed = [];
+    state.instruments.forEach(inst => {
+      const c = catalogFind(inst.symbol, inst.exchange);
+      if (!c) return;
+      if (c.name !== inst.name || (c.eng_name && c.eng_name !== inst.eng_name)) {
+        if (c.name !== inst.name) renamed.push({ symbol: inst.symbol, exchange: inst.exchange, from: inst.name, to: c.name });
+        inst.name = c.name;
+        if (c.eng_name) inst.eng_name = c.eng_name;
+        inst.updated_at = nowISO();
+      }
+    });
     state.meta.catalogSyncedAt = nowISO();
     commit();
-    return getCatalogInfo();
+    return { ...(await getCatalogInfo()), renamed };
+  }
+  // 정기 갱신: 다음 갱신 시각이 지났으면 자동으로 최신화 (실제로는 매월 서버의 Cron 이 실행)
+  async function autoSyncCatalogIfDue() {
+    const info = await getCatalogInfo();
+    if (new Date() >= new Date(info.nextSyncAt)) return syncCatalog();
+    return null;
   }
   // 종목 검색: 이미 등록된 종목(registered) + 외부 목록에만 있는 종목을 함께 돌려줍니다.
   async function searchCatalog(q) {
@@ -600,7 +619,7 @@ window.DataService = (function () {
     onChange, resetMock, getStatus,
     getAccounts, addAccount, updateAccount, deleteAccount,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
-    getCatalogInfo, syncCatalog, searchCatalog, ensureInstrument,
+    getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate,
     getSnapshots, getSnapshotItems, createDailySnapshot,

@@ -82,7 +82,7 @@
       <div class="card pad catalog-bar">
         <div><b>외부 종목 목록</b> <span class="muted">${cat.count}개 종목 · 마지막 갱신 ${Fmt.mdhm(cat.syncedAt)} · 다음 자동 갱신 ${Fmt.mdhm(cat.nextSyncAt)}</span>
           <div class="small muted">상장 종목 목록을 한 달에 한 번 외부에서 받아 DB에 저장해 두고, [종목 추가] 검색은 이 저장된 목록을 조회합니다. (DB 용량 절약)</div></div>
-        <button type="button" class="btn" id="btn-sync" title="Mock 단계에서는 갱신 시각만 바뀝니다">지금 갱신</button>
+        <button type="button" class="btn" id="btn-sync" title="외부 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button>
       </div>
       <p class="small muted">종목을 자산군에 <b>추가</b>하거나 <b>제거</b>해도 종목과 보유 내역은 지워지지 않고 자산군 분류만 바뀝니다. 한 종목을 옮기면 그 종목을 가진 모든 계좌의 보유분이 함께 옮겨집니다.</p>
       <div class="tbl-wrap"><table class="tbl comp-tbl">
@@ -97,8 +97,8 @@
 
   function bindComposition(main, instruments) {
     main.querySelector('#btn-sync').onclick = async () => {
-      await DataService.syncCatalog();
-      App.toast('외부 종목 목록을 갱신했습니다. (Mock: 갱신 시각만 기록)');
+      const r = await DataService.syncCatalog();
+      App.toast(r.renamed.length ? `목록을 최신화했습니다. 종목명 변경 ${r.renamed.length}건: ${r.renamed.map(x => `${x.from} → ${x.to}`).join(', ')}` : '목록을 최신화했습니다. 바뀐 종목명은 없습니다.');
     };
     main.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
       const inst = instruments.find(i => i.id === b.dataset.remove);
