@@ -7,10 +7,11 @@
 //   POST ...?track=1 {items}    → 사이트가 쓰는 종목을 시세 대상으로 등록 (전체 종목 목록에 있는 것만)
 //
 // 가격 출처
-//   GOOGLE : Google 시트의 GOOGLEFINANCE 결과 (웹에 게시한 CSV, 비밀값 GSHEET_CSV_URL)
+//   GOOGLE : Google 시트의 GOOGLEFINANCE 결과 (웹에 게시한 CSV, 비밀값 GSHEET_CSV_URL 또는 app_settings)
 //   NAVER  : 국내 ETF 중 Google 시세가 없는 종목은 네이버 금융 ETF 시세로 대체
 //   UPBIT  : 업비트 공개 시세 API (원화 마켓)
 //   GOLD   : KRX 금현물(1g) = 국제 금시세(XAU/USD, 온스) ÷ 31.1034768 × USD/KRW
+//   환율·금시세가 Google 에 없으면: 환율 open.er-api.com(일 1회), 금 api.gold-api.com(실시간)
 //   CASH   : 항상 1 (저장하지 않음)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -98,7 +99,12 @@ Deno.serve(async (req) => {
 
   // 2-1) Google 시트 (주식·ETF·환율·국제 금시세)
   const g = new Map<string, number>();
-  const csvUrl = Deno.env.get('GSHEET_CSV_URL');
+  // 시트 주소: 비밀값(GSHEET_CSV_URL) 또는 서버 전용 설정 표(app_settings)
+  let csvUrl = Deno.env.get('GSHEET_CSV_URL') || '';
+  if (!csvUrl) {
+    const { data: setting } = await db.from('app_settings').select('value').eq('key', 'GSHEET_CSV_URL').maybeSingle();
+    csvUrl = setting?.value || '';
+  }
   let sheetNote = '';
   if (!csvUrl) sheetNote = 'Google 시트 주소(GSHEET_CSV_URL)가 아직 설정되지 않았습니다';
   else {
@@ -112,8 +118,25 @@ Deno.serve(async (req) => {
       }
     } catch (e) { sheetNote = 'Google 시트를 읽지 못했습니다: ' + (e as Error).message; }
   }
-  const fx = g.get('CURRENCY:USDKRW') ?? null;
-  const xau = g.get('CURRENCY:XAUUSD') ?? null;
+  // 환율·국제 금시세: Google 값이 없으면 무료 공개 API 로 대체
+  //   환율 USD/KRW → open.er-api.com (하루 1회 갱신되는 기준 환율)
+  //   금 XAU/USD  → api.gold-api.com (실시간)
+  let fx = g.get('CURRENCY:USDKRW') ?? null, fxSource = 'GOOGLE';
+  let xau = g.get('CURRENCY:XAUUSD') ?? null, xauSource = 'GOOGLE';
+  if (!fx) {
+    try {
+      const r = await fetch('https://open.er-api.com/v6/latest/USD');
+      const v = Number((await r.json())?.rates?.KRW);
+      if (v > 0) { fx = Math.round(v * 100) / 100; fxSource = 'ER_API'; }
+    } catch { /* 환율 없음 */ }
+  }
+  if (!xau) {
+    try {
+      const r = await fetch('https://api.gold-api.com/price/XAU');
+      const v = Number((await r.json())?.price);
+      if (v > 0) { xau = Math.round(v * 100) / 100; xauSource = 'GOLD_API'; }
+    } catch { /* 금시세 없음 */ }
+  }
 
   // 국내 ETF 는 Google 에 시세가 없으면 네이버 금융 ETF 시세로 대신합니다 (한 번만 받아 재사용)
   let naver: Map<string, number> | null = null;
@@ -165,8 +188,8 @@ Deno.serve(async (req) => {
     if (error) failures.push({ symbol: '*', exchange: '*', reason: '가격 저장 실패: ' + error.message });
   }
   const fxRows = [];
-  if (fx) fxRows.push({ pair: 'USD/KRW', rate: fx, source: 'GOOGLE', as_of: now, updated_at: now });
-  if (xau) fxRows.push({ pair: 'XAU/USD', rate: xau, source: 'GOOGLE', as_of: now, updated_at: now });
+  if (fx) fxRows.push({ pair: 'USD/KRW', rate: fx, source: fxSource, as_of: now, updated_at: now });
+  if (xau) fxRows.push({ pair: 'XAU/USD', rate: xau, source: xauSource, as_of: now, updated_at: now });
   if (fxRows.length) await db.from('fx_rates').upsert(fxRows, { onConflict: 'pair' });
 
   // 45일 동안 사이트에서 요청이 없던 종목은 시세 대상에서 제외 (Google 시트 부담 줄이기)
@@ -175,5 +198,5 @@ Deno.serve(async (req) => {
   const message = [sheetNote, `성공 ${rows.length} · 실패 ${failures.length}`].filter(Boolean).join(' / ');
   if (run) await db.from('price_runs').update({ finished_at: new Date().toISOString(), ok_count: rows.length, fail_count: failures.length, failures, message }).eq('id', run.id);
 
-  return json({ ok: true, trigger, as_of: now, updated: rows.length, failed: failures.length, fx, xau, message, failures });
+  return json({ ok: true, trigger, as_of: now, updated: rows.length, failed: failures.length, fx, fxSource, xau, xauSource, message, failures });
 });
