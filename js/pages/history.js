@@ -22,12 +22,12 @@
     const last = snaps[snaps.length - 1];
 
     // 날짜별 자산 현황 표 (최근 날짜가 위) — 자산군 현황 화면과 같은 양식 (UI.statusTable)
-    const table = UI.statusTable(snaps.map((s, i) => ({ label: s.snapshot_date, sub: s.snapshot_time, tag: s.simulated ? '시뮬레이션' : '', model: models[i] })).reverse(), mode, { empty: '스냅샷이 없습니다' });
+    const table = UI.statusTable(snaps.map((s, i) => ({ label: s.snapshot_date, sub: s.snapshot_time, tag: s.initial ? '최초 데이터' : s.simulated ? '시뮬레이션' : '', model: models[i] })).reverse(), mode, { empty: '스냅샷이 없습니다' });
 
     document.getElementById('main').innerHTML = `
       <div class="page-hd">
         <div><h1>이력</h1><p class="desc">매일 08:00 KST 스냅샷으로 저장된 과거 자산 현황입니다. 과거 값은 당시 가격·환율·매입환율·자산군·계좌명으로 계산하며 이후 변경되지 않습니다.</p></div>
-        <div class="toolbar"><button type="button" class="btn" id="btn-sim" title="Mock 검수용 — 실제 연동 시 제거됩니다">08:00 스냅샷 생성 시뮬레이션</button></div>
+        ${status.realHistory ? '' : '<div class="toolbar"><button type="button" class="btn" id="btn-sim" title="Mock 검수용">08:00 스냅샷 생성 시뮬레이션</button></div>'}
       </div>
       ${App.statusBar(status, { showBase: false })}
       <div class="sec toolbar">
@@ -89,7 +89,7 @@
       pick.addEventListener('change', () => { if (pick.value) { txt.value = pick.value; applyDates(); } });
     });
     main.querySelector('#btn-xlsx').onclick = exportXlsx;
-    main.querySelector('#btn-sim').onclick = async () => {
+    if (main.querySelector('#btn-sim')) main.querySelector('#btn-sim').onclick = async () => {
       const ok = await App.confirm(`<b>${status.nextSnapshotDate} 08:00</b> 스냅샷을 지금의 보유 상태로 생성합니다.<br><small>Mock 검수용 기능입니다. 생성된 스냅샷은 이후 보유를 바꿔도 변하지 않습니다.</small>`, { okLabel: '생성' });
       if (!ok) return;
       try {

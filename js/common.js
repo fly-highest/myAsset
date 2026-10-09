@@ -138,6 +138,10 @@ window.App = (function () {
     if (session) await DataService.syncFromCloud(); // 서버(Supabase)의 최신 데이터를 먼저 불러옴
     DataService.onChange(rerender); // 저장 즉시 화면 재계산 (19-1항)
     rerender();
+    // 이력: 처음이면 지금 현황을 '최초 데이터'로 저장, 이후에는 매일 08:00 스냅샷이 없으면 저장
+    if (session) DataService.ensureHistory().then(r => {
+      if (r && r.started) toast(`이력을 새로 시작했습니다. 지금 현황을 ${Fmt.md(r.started.snapshot_date)} 최초 데이터로 저장했습니다.`);
+    }).catch(e => console.warn('이력 저장 실패', e));
     // 외부 종목 목록 정기(월 1회) 갱신 — 갱신 시각이 지났으면 자동 최신화 (새 종목명 반영)
     DataService.autoSyncCatalogIfDue().then(r => { if (r && r.renamed.length) toast(`종목 목록 정기 갱신을 반영했습니다. 종목명 변경 ${r.renamed.length}건`); }).catch(() => {});
     DataService.trackDaily(); // 등록된 종목의 현재가를 서버가 가져오도록 하루 한 번 알림

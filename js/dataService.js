@@ -738,7 +738,8 @@ window.DataService = (function () {
       baseSource: state.meta.baseSource,
       changedSinceSnapshot: !!state.meta.changedSinceSnapshot,
       canUndo: !!state.meta.importBackup,
-      lastSnapshot: last ? { date: last.snapshot_date, time: last.snapshot_time, simulated: !!last.simulated } : null,
+      lastSnapshot: last ? { date: last.snapshot_date, time: last.snapshot_time, simulated: !!last.simulated, initial: !!last.initial } : null,
+      realHistory: !!state.meta.realHistory,
       nextSnapshotDate: last ? Fmt.addDays(last.snapshot_date, 1) : Fmt.todayKST()
     };
   }
@@ -795,7 +796,8 @@ window.DataService = (function () {
   function allSnapshots() {
     const last = scheduledLastDate();
     if (!baseCache || baseCache.lastDate !== last) {
-      baseCache = { lastDate: last, list: MOCK.buildBaseSnapshots(last, makeSnapshot) };
+      // 실제 이력 모드: Mock 예시 이력 없이, 저장된 스냅샷(최초 데이터 + 매일 08:00)만 사용
+      baseCache = { lastDate: last, list: state.meta.realHistory ? [] : MOCK.buildBaseSnapshots(last, makeSnapshot) };
       snapCache = null;
     }
     if (!snapCache) {
@@ -830,7 +832,7 @@ window.DataService = (function () {
     return s ? s.items : [];
   }
   // 08:00 정기 스냅샷 (Mock 시뮬레이션 → 향후 Edge Function). 저장된 스냅샷은 이후 변경하지 않습니다.
-  async function createDailySnapshot(date) {
+  async function createDailySnapshot(date, { real = false, initial = false } = {}) {
     const list = allSnapshots();
     const lastDate = list.length ? list[list.length - 1].snapshot.snapshot_date : Fmt.addDays(Fmt.todayKST(), -1);
     date = date || Fmt.addDays(lastDate, 1);
@@ -846,12 +848,37 @@ window.DataService = (function () {
       return { account: accMap[h.account_id], instrument: inst, holding: h, price };
     });
     const snap = clone(makeSnapshot(date, entries, fx, nowISO()));
-    snap.snapshot.simulated = true;
+    snap.snapshot.simulated = !real;
+    if (initial) { // 이력의 시작점 (최초 데이터) — 시각 대신 '최초'로 표시
+      snap.snapshot.initial = true;
+      snap.snapshot.snapshot_time = '최초';
+    }
     state.extraSnapshots.push(snap);
     state.meta.changedSinceSnapshot = false;
     state.meta.importBackup = null; // 되돌리기는 다음 스냅샷 전까지만
     commit();
     return clone(snap.snapshot);
+  }
+  // 이력 초기화: 예시(Mock) 이력과 지난 스냅샷을 모두 지우고, 지금 현황을 기준일 날짜의 '최초 데이터'로 저장
+  async function startRealHistory() {
+    state.meta.realHistory = true;
+    state.extraSnapshots = [];
+    baseCache = null; snapCache = null;
+    return createDailySnapshot(state.meta.baseDate || Fmt.todayKST(), { real: true, initial: true }); // 날짜 = 현황 기준일 (업로드 파일의 기준일자)
+  }
+  // 매일 08:00 스냅샷 (실제 이력 모드): 화면을 열었을 때 마지막 08:00 스냅샷이 없으면 지금 현황으로 저장
+  // (지나간 날짜는 그때의 보유를 알 수 없어 만들지 않음)
+  // 로그인 후 화면을 열 때: 실제 데이터인데 아직 예시 이력을 쓰고 있으면 이력 초기화(최초 데이터 저장), 아니면 08:00 스냅샷 확인
+  async function ensureHistory() {
+    if (!state.meta.realHistory && !isPristine()) return { started: await startRealHistory() };
+    return { daily: await autoDailySnapshot() };
+  }
+  async function autoDailySnapshot() {
+    if (!state.meta.realHistory) return null;
+    const list = allSnapshots(), target = scheduledLastDate();
+    const last = list.length ? list[list.length - 1].snapshot.snapshot_date : null;
+    if (last && last >= target) return null;
+    return createDailySnapshot(target, { real: true });
   }
 
   // ---------------------------------------------------------------
@@ -1296,7 +1323,7 @@ window.DataService = (function () {
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
-    getSnapshots, getSnapshotItems, createDailySnapshot,
+    getSnapshots, getSnapshotItems, createDailySnapshot, startRealHistory, autoDailySnapshot, ensureHistory,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,
     // 자체 점검(tools/selftest.html) 전용
