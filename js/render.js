@@ -220,6 +220,31 @@ window.UI = (function () {
   }
   window.addEventListener('resize', fitTree);
 
+  // ---- 화면 데이터를 xlsx 로 내려받기 (SheetJS) ----
+  // sheets: [{ name, rows: [[...], ...] (첫 줄 = 제목), widths: [열 너비], formats: { 열번호: '#,##0' } }]
+  // 숫자는 숫자 그대로 저장 → 엑셀에서 바로 계산 가능
+  function downloadXlsx(fileName, sheets) {
+    if (!window.XLSX) { App.toast('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.', 'error'); return; }
+    const wb = XLSX.utils.book_new();
+    sheets.forEach(s => {
+      const ws = XLSX.utils.aoa_to_sheet(s.rows);
+      if (s.widths) ws['!cols'] = s.widths.map(w => ({ wch: w }));
+      if (s.formats) {
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        for (let r = 1; r <= range.e.r; r++) {
+          Object.entries(s.formats).forEach(([c, z]) => {
+            const cell = ws[XLSX.utils.encode_cell({ r, c: +c })];
+            if (cell && cell.t === 'n') cell.z = z;
+          });
+        }
+      }
+      XLSX.utils.book_append_sheet(wb, ws, s.name);
+    });
+    XLSX.writeFile(wb, fileName);
+  }
+  // 엑셀 숫자 형식
+  const XF = { krw: '#,##0', usd: '#,##0.00', orig: '#,##0.##', fx: '#,##0.00', pct: '0.00"%"', qty: '#,##0.########' };
+
   // ---- Chart.js 도우미 (다시 그릴 때 이전 차트 제거) ----
   function chart(canvasId, config) {
     if (charts[canvasId]) charts[canvasId].destroy();
@@ -313,5 +338,5 @@ window.UI = (function () {
     });
   }
 
-  return { amt, prof, ret, weight, w, priceCell, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
+  return { amt, prof, ret, weight, w, priceCell, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
 })();

@@ -2,6 +2,7 @@
 (function () {
   let range = '3M'; // 'CUSTOM' 이면 custom.from ~ custom.to
   let custom = { from: '', to: '' };
+  let lastView = null; // 엑셀 다운로드용 최근 화면 데이터
   const RANGES = [['1W', '1주'], ['1M', '1개월'], ['3M', '3개월'], ['6M', '6개월'], ['1Y', '1년'], ['ALL', '전체']];
   const modelCache = new Map();
 
@@ -17,6 +18,7 @@
     const fromVal = range === 'CUSTOM' ? custom.from : (snaps[0] ? snaps[0].snapshot_date : '');
     const toVal = range === 'CUSTOM' ? custom.to : today;
     const models = await Promise.all(snaps.map(snapModel));
+    lastView = { snaps, models, mode, fromVal: snaps[0] ? snaps[0].snapshot_date : '', toVal: snaps.length ? snaps[snaps.length - 1].snapshot_date : '' };
     const last = snaps[snaps.length - 1];
 
     // 날짜별 자산 현황 표: 총합 + 자산군별 총액·비중 (최근 날짜가 위)
@@ -74,7 +76,7 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 보이는 기간·통화 기준으로 표를 엑셀 파일로 내려받습니다">엑셀 다운로드</button></div></div>
         <div class="tbl-wrap hist-wrap"><table class="tbl hist">
           <thead>
             <tr>
@@ -127,6 +129,7 @@
       };
       pick.addEventListener('change', () => { if (pick.value) { txt.value = pick.value; applyDates(); } });
     });
+    main.querySelector('#btn-xlsx').onclick = exportXlsx;
     main.querySelector('#btn-sim').onclick = async () => {
       const ok = await App.confirm(`<b>${status.nextSnapshotDate} 08:00</b> 스냅샷을 지금의 보유 상태로 생성합니다.<br><small>Mock 검수용 기능입니다. 생성된 스냅샷은 이후 보유를 바꿔도 변하지 않습니다.</small>`, { okLabel: '생성' });
       if (!ok) return;
@@ -153,6 +156,49 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
     const d = new Date(s + 'T00:00:00Z');
     return !isNaN(d) && d.toISOString().slice(0, 10) === s;
+  }
+
+  // 엑셀: 화면의 '날짜별 자산 현황' 표와 같은 내용 (지금 기간·통화 모드 기준, 최근 날짜가 위)
+  function exportXlsx() {
+    const { snaps, models, mode, fromVal, toVal } = lastView;
+    if (!snaps.length) { App.toast('내려받을 스냅샷이 없습니다.', 'error'); return; }
+    const F = UI.XF, r2 = v => Math.round(v * 100) / 100;
+    const pct = (a, b) => (b ? (a / b) * 100 : 0);
+    const mixed = mode === 'MIXED';
+    const cur = mode === 'USD' ? '$' : '₩';
+    const gNames = Groups.list.map(g => g.name);
+    const head = ['날짜', '시각', ...(mixed ? ['통화'] : []),
+      `총 평가금액${mixed ? '' : `(${cur})`}`, `총 투자금액${mixed ? '' : `(${cur})`}`, `총 손익${mixed ? '' : `(${cur})`}`, '총 수익률(%)', '환율(USD/KRW)',
+      ...gNames.map(n => `${n} 총액`), ...gNames.map(n => `${n} 비중(%)`)];
+    const rows = [head];
+    const money = (v, c) => (c === 'USD' ? r2(v) : Math.round(v));
+    snaps.map((s, i) => ({ s, m: models[i] })).reverse().forEach(({ s, m }) => {
+      if (!mixed) {
+        const v = Calc.view(m.total, mode, m.fx).parts[0];
+        const c = mode === 'USD' ? 'USD' : 'KRW';
+        rows.push([s.snapshot_date, s.snapshot_time, money(v.val, c), money(v.inv, c), money(v.prof, c), r2(v.ret), m.fx,
+          ...Groups.list.map(g => money(Calc.view(m.groups[g.code].agg, mode, m.fx).parts[0].val, c)),
+          ...Groups.list.map(g => r2(pct(m.groups[g.code].agg.valK, m.total.valK)))]);
+        return;
+      }
+      [['KRW', '원화', 'kr'], ['USD', '달러', 'us']].forEach(([c, label, k]) => {
+        const t = m.total[k], prof = t.val - t.inv;
+        rows.push([s.snapshot_date, s.snapshot_time, label, money(t.val, c), money(t.inv, c), money(prof, c), r2(pct(prof, t.inv)), m.fx,
+          ...Groups.list.map(g => { const a = m.groups[g.code].agg; return (k === 'kr' ? a.nKR : a.nUS) ? money(a[k].val, c) : ''; }),
+          ...Groups.list.map(g => { const a = m.groups[g.code].agg; return (k === 'kr' ? a.nKR : a.nUS) ? r2(pct(a[k].val, t.val)) : ''; })]);
+      });
+    });
+    const off = mixed ? 1 : 0, amt = mode === 'USD' ? F.usd : mixed ? F.orig : F.krw;
+    const formats = { [2 + off]: amt, [3 + off]: amt, [4 + off]: amt, [5 + off]: F.pct, [6 + off]: F.fx };
+    Groups.list.forEach((g, j) => { formats[7 + off + j] = amt; formats[7 + off + gNames.length + j] = F.pct; });
+    const modeName = { KRW: '원화환산', USD: '달러환산', MIXED: '한국=원화 / 미국=달러' }[mode];
+    const info = [['항목', '값'], ['기간', `${fromVal} ~ ${toVal} (${snaps.length}일)`], ['통화 표시', modeName],
+      ['자산군', '스냅샷 당시 분류'], ['비중', mixed ? '통화별 자산 안에서의 비중 (원화 자산끼리 / 달러 자산끼리)' : '원화 환산 기준 전체 대비 비중'],
+      ['금액 계산', '각 날짜 08:00 스냅샷의 당시 가격·환율·매입환율로 계산'], ['내려받은 시각', Fmt.mdhm(new Date().toISOString()) + ' (KST)']];
+    UI.downloadXlsx(`myAsset_이력_${fromVal}_${toVal}.xlsx`, [
+      { name: '날짜별 자산 현황', rows, widths: [11, 6, ...(mixed ? [6] : []), 15, 15, 14, 11, 12, ...gNames.map(() => 14), ...gNames.map(() => 11)], formats },
+      { name: '기준정보', rows: info, widths: [12, 70] }
+    ]);
   }
 
   DataService.onChange(() => modelCache.clear());
