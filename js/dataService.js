@@ -1047,6 +1047,7 @@ window.DataService = (function () {
 
   // 내려받는 엑셀 (ExcelJS): 증권사·계좌종류 드롭다운 + 심볼 → 종목 정보 자동 입력
   const colLetter = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const NUM_FRAC = '#,##0.########'; // 소수 수량 (예: 0.01234567 BTC)
   async function buildExcelBuffer(baseDate, rows) {
     if (!window.ExcelJS) throw fail('엑셀 라이브러리(ExcelJS)를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
     const wb = new ExcelJS.Workbook();
@@ -1091,9 +1092,20 @@ window.DataService = (function () {
         } else if (v !== undefined && v !== '') c.value = v;
       });
       row.getCell(col('심볼')).numFmt = '@'; // 005930 같은 코드가 숫자로 바뀌지 않게
+      // 수량·평균매입가: 숫자 서식 + 천 단위 콤마. 소수 수량은 소수점까지, USD 평균매입가는 소수 둘째 자리
+      const q = data[col('수량') - 1], cur = data[col('통화') - 1];
+      row.getCell(col('수량')).numFmt = q % 1 ? NUM_FRAC : '#,##0';
+      row.getCell(col('평균매입가')).numFmt = cur === 'USD' ? '#,##0.00' : '#,##0';
       row.getCell(col('증권사')).dataValidation = { type: 'list', allowBlank: true, formulae: [`'선택목록'!$A$2:$A$${brokers.length + 1}`], showErrorMessage: true, errorTitle: '증권사', error: '목록에서 선택해 주세요 (선택목록 시트 = 증권 마스터)' };
       row.getCell(col('계좌종류')).dataValidation = { type: 'list', allowBlank: true, formulae: [`'선택목록'!$B$2:$B$${types.length + 1}`], showErrorMessage: true, errorTitle: '계좌종류', error: '목록에서 선택해 주세요 (선택목록 시트 = 증권 마스터)' };
     }
+    // 엑셀에서 통화·수량을 고쳐 써도 서식이 따라가도록 조건부 서식도 함께
+    const qL = colLetter(col('수량')), pL = colLetter(col('평균매입가')), cL = colLetter(col('통화')), last = total + 1;
+    ws.addConditionalFormatting({ ref: `${pL}2:${pL}${last}`, rules: [
+      { type: 'expression', priority: 1, formulae: [`$${cL}2="USD"`], style: { numFmt: '#,##0.00' } },
+      { type: 'expression', priority: 2, formulae: [`$${cL}2<>"USD"`], style: { numFmt: '#,##0' } }] });
+    ws.addConditionalFormatting({ ref: `${qL}2:${qL}${last}`, rules: [
+      { type: 'expression', priority: 3, formulae: [`AND(ISNUMBER($${qL}2),MOD($${qL}2,1)<>0)`], style: { numFmt: NUM_FRAC } }] });
 
     // 종목목록: 심볼 → 종목명·거래소·자산유형·통화 (DB = 종목 마스터 + 외부 종목 목록)
     const list = wb.addWorksheet('종목목록', { views: [{ state: 'frozen', ySplit: 1 }] });
