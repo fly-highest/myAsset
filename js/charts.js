@@ -111,18 +111,21 @@ window.Charts = (function () {
     });
   }
 
-  // 자산군 비중 추이 (당시 분류). 원화환산 = ₩ 누적, 달러환산 = 당시 환율로 나눈 $ 누적,
-  // 혼합 모드 = 통화를 합칠 수 없어 비중(%) 누적. 비중 값 자체는 어느 모드든 원화 환산 기준입니다.
-  function groupShare(canvasId, snaps, models, mode) {
+  // 자산군 비중 추이 (당시 분류). 원화환산 = ₩ 누적, 달러환산 = 당시 환율로 나눈 $ 누적.
+  // part (혼합 모드): 'kr' = 원화 자산(₩)만, 'us' = 달러 자산($)만 따로 그립니다. 툴팁 비중은 그 차트 안에서의 비중.
+  function groupShare(canvasId, snaps, models, mode, part) {
     const labels = snaps.map(s => s.snapshot_date);
-    const asPct = mode === 'MIXED';
-    const cur = mode === 'USD' ? 'USD' : 'KRW';
+    const cur = part === 'us' || (!part && mode === 'USD') ? 'USD' : 'KRW';
     const valueOf = (m, code) => {
-      const k = m.groups[code].agg.valK;
-      if (asPct) return m.total.valK ? (k / m.total.valK) * 100 : 0;
-      return cur === 'USD' ? (m.fx ? k / m.fx : 0) : k;
+      const a = m.groups[code].agg;
+      if (part === 'kr') return a.kr.val;
+      if (part === 'us') return a.us.val;
+      return cur === 'USD' ? (m.fx ? a.valK / m.fx : 0) : a.valK;
     };
-    const shareOf = (i, code) => (models[i].total.valK ? (models[i].groups[code].agg.valK / models[i].total.valK) * 100 : 0);
+    const shareOf = (i, code) => {
+      const tot = Groups.codes.reduce((s, c) => s + valueOf(models[i], c), 0);
+      return tot ? (valueOf(models[i], code) / tot) * 100 : 0;
+    };
     return UI.chart(canvasId, {
       type: 'line',
       data: {
@@ -140,14 +143,12 @@ window.Charts = (function () {
           legend: { position: 'bottom', labels: { boxWidth: 12 } },
           tooltip: { callbacks: { label: c => {
             const w = Fmt.weight(shareOf(c.dataIndex, c.dataset.code));
-            return asPct ? ` ${c.dataset.label}: ${w}` : ` ${c.dataset.label}: ${Fmt.money(c.parsed.y, cur)} (${w})`;
+            return ` ${c.dataset.label}: ${Fmt.money(c.parsed.y, cur)} (${w})`;
           } } }
         },
         scales: {
           x: { ticks: { maxTicksLimit: 8, callback: function (v) { return Fmt.md(this.getLabelForValue(v)); } }, grid: { display: false } },
-          y: asPct
-            ? { stacked: true, min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#eef1f5' } }
-            : { stacked: true, min: 0, ticks: { callback: tick(cur) }, grid: { color: '#eef1f5' } }
+          y: { stacked: true, min: 0, ticks: { callback: tick(cur) }, grid: { color: '#eef1f5' } }
         }
       }
     });

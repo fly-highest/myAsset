@@ -49,7 +49,9 @@
       </div>
       <div class="sec grid-2e">
         <div class="card pad"><div class="sec-hd"><h2>총 평가금액 · 투자금액 추이</h2></div><div class="chart-box"><canvas id="ch-trend"></canvas></div></div>
-        <div class="card pad"><div class="sec-hd"><h2>자산군 비중 추이</h2><span class="small muted">${mode === 'USD' ? '당시 분류 · 달러 환산(당시 환율)' : mode === 'KRW' ? '당시 분류 · 원화 환산' : '당시 분류 · 혼합 모드는 통화를 합치지 않아 비중(%)으로 표시'}</span></div><div class="chart-box"><canvas id="ch-share"></canvas></div></div>
+        <div class="card pad"><div class="sec-hd"><h2>자산군 비중 추이</h2><span class="small muted">${mode === 'USD' ? '당시 분류 · 달러 환산(당시 환율)' : mode === 'KRW' ? '당시 분류 · 원화 환산' : '당시 분류 · 위: 원화 자산(₩) / 아래: 달러 자산($)'}</span></div>${mode === 'MIXED'
+          ? '<div class="chart-box half"><canvas id="ch-share-kr"></canvas></div><div class="chart-box half"><canvas id="ch-share-us"></canvas></div>'
+          : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
         <div class="sec-hd"><h2>날짜별 자산 현황</h2><span class="small muted">자산군은 당시 분류 · 비중은 원화 환산 기준</span></div>
@@ -88,7 +90,10 @@
     };
 
     Charts.trend('ch-trend', await Charts.snapshotSeries(snaps, mode));
-    Charts.groupShare('ch-share', snaps, models, mode);
+    if (mode === 'MIXED') {
+      Charts.groupShare('ch-share-kr', snaps, models, mode, 'kr');
+      Charts.groupShare('ch-share-us', snaps, models, mode, 'us');
+    } else Charts.groupShare('ch-share', snaps, models, mode);
   }
 
   DataService.onChange(() => modelCache.clear());
