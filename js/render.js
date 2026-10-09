@@ -273,13 +273,16 @@ window.UI = (function () {
     sheets.forEach(s => {
       const ws = XLSX.utils.aoa_to_sheet(s.rows);
       if (s.widths) ws['!cols'] = s.widths.map(w => ({ wch: w }));
-      if (s.formats) {
+      // 숫자 형식: formats = { 열번호: 형식 } 또는 formatFn(행 배열, 열번호) → 형식 (통화가 섞인 열은 셀마다 다르게)
+      if (s.formats || s.formatFn) {
         const range = XLSX.utils.decode_range(ws['!ref']);
-        for (let r = 1; r <= range.e.r; r++) {
-          Object.entries(s.formats).forEach(([c, z]) => {
-            const cell = ws[XLSX.utils.encode_cell({ r, c: +c })];
-            if (cell && cell.t === 'n') cell.z = z;
-          });
+        for (let r = 0; r <= range.e.r; r++) {
+          for (let c = 0; c <= range.e.c; c++) {
+            const cell = ws[XLSX.utils.encode_cell({ r, c })];
+            if (!cell || cell.t !== 'n') continue;
+            const z = (s.formatFn && s.formatFn(s.rows[r] || [], c)) || (s.formats && s.formats[c]);
+            if (z) cell.z = z;
+          }
         }
       }
       XLSX.utils.book_append_sheet(wb, ws, s.name);
@@ -287,7 +290,7 @@ window.UI = (function () {
     XLSX.writeFile(wb, fileName);
   }
   // 엑셀 숫자 형식
-  const XF = { krw: '#,##0', usd: '#,##0.00', orig: '#,##0.##', fx: '#,##0.00', pct: '0.00"%"', qty: '#,##0.########' };
+  const XF = { krw: '#,##0', usd: '#,##0.00', orig: '#,##0.##', fx: '#,##0.00', pct: '0.00"%"', qty: '#,##0.0#######' };
 
   // ---- Chart.js 도우미 (다시 그릴 때 이전 차트 제거) ----
   function chart(canvasId, config) {
