@@ -12,6 +12,21 @@ window.App = (function () {
     { key: 'history', href: 'history.html', label: '이력' },
     { key: 'manage', href: 'manage.html', label: '계좌/자산관리' }
   ];
+  // 배포 버전 확인: 브라우저가 예전 화면 파일을 기억하고 있으면 최신 버전으로 한 번 새로고침합니다.
+  // (이 파일 주소의 ?v= 값과 서버의 version.txt 를 비교. 배포할 때마다 둘을 같이 올립니다)
+  (function checkVersion() {
+    const cur = (document.currentScript && /[?&]v=([^&]+)/.exec(document.currentScript.src) || [])[1];
+    if (!cur || location.protocol === 'file:') return;
+    fetch('version.txt?t=' + Date.now(), { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).then(v => {
+      v = v.trim();
+      const key = 'myAsset.reloadedFor';
+      if (v && v !== cur && sessionStorage.getItem(key) !== v) {
+        sessionStorage.setItem(key, v);
+        location.reload();
+      }
+    }).catch(() => {});
+  })();
+
   const app = { mode: 'KRW' }; // 기본값 원화환산, 선택 상태는 저장하지 않음 (13항)
   let renderFn = null;
   let rendering = false, pending = false;
