@@ -11,6 +11,7 @@ window.MOCK.brokers = [
   { id: 'brk-kb', name: 'KB증권', sort: 6 },
   { id: 'brk-shinhan', name: '신한투자증권', sort: 7 },
   { id: 'brk-toss', name: '토스증권', sort: 8 },
+  { id: 'brk-meritz', name: '메리츠증권', sort: 8.5 },
   { id: 'brk-upbit', name: '업비트', sort: 9 },
   { id: 'brk-bithumb', name: '빗썸', sort: 10 },
   { id: 'brk-bank', name: '은행', sort: 11 },

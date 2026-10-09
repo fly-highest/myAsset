@@ -66,6 +66,21 @@ window.DataService = (function () {
     } catch (e) { /* 저장소를 못 쓰면 초기 Mock 으로 동작 */ }
     if (!state) state = seed();
     if (!state.targets) state.targets = clone(DEFAULT_TARGETS); // 예전 저장 데이터에는 목표 비중이 없음
+    addNewDefaultBrokers();
+  }
+  // 기본 증권사 목록에 나중에 추가한 항목을, 이미 쓰고 있는 브라우저에도 한 번만 넣어 줍니다.
+  // (사용자가 지운 항목이 다시 생기지 않도록 넣은 항목을 meta.addedBrokers 에 기록)
+  const LATER_BROKERS = ['brk-meritz'];
+  function addNewDefaultBrokers() {
+    state.meta.addedBrokers = state.meta.addedBrokers || [];
+    let changed = false;
+    LATER_BROKERS.forEach(id => {
+      if (state.meta.addedBrokers.includes(id)) return;
+      const def = MOCK.brokers.find(b => b.id === id);
+      if (def && !state.brokers.some(b => b.id === id || b.name === def.name)) { state.brokers.push(clone(def)); changed = true; }
+      state.meta.addedBrokers.push(id);
+    });
+    if (changed) { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 다음에 다시 시도 */ } }
   }
   function commit() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('Mock 저장 실패', e); }
