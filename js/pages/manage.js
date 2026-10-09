@@ -80,9 +80,9 @@
     const un = instruments.filter(i => !i.asset_group);
     return `
       <div class="card pad catalog-bar">
-        <div><b>외부 종목 목록</b> <span class="muted">${cat.count}개 종목 · 마지막 갱신 ${Fmt.mdhm(cat.syncedAt)} · 다음 자동 갱신 ${Fmt.mdhm(cat.nextSyncAt)}</span>
-          <div class="small muted">상장 종목 목록을 한 달에 한 번 외부에서 받아 DB에 저장해 두고, [종목 추가] 검색은 이 저장된 목록을 조회합니다. (DB 용량 절약)</div></div>
-        <button type="button" class="btn" id="btn-sync" title="외부 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button>
+        <div><b>전체 상장 종목 목록</b> <span class="muted">${Fmt.plain(cat.count)}개 종목 · 마지막 갱신 ${cat.syncedAt ? Fmt.mdhm(cat.syncedAt) : '—'} · 다음 자동 갱신 ${Fmt.mdhm(cat.nextSyncAt)}</span>
+          <div class="small muted">국내 주식(KRX KIND)·국내 ETF(네이버)·미국 주식·ETF(NASDAQ 공개 파일)·업비트 코인 목록을 매월 1일 받아 DB에 저장하고, [종목 추가] 검색은 이 목록을 조회합니다.</div></div>
+        <button type="button" class="btn" id="btn-sync" title="전체 상장 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button>
       </div>
       <p class="small muted">종목을 자산군에 <b>추가</b>하거나 <b>제거</b>해도 종목과 보유 내역은 지워지지 않고 자산군 분류만 바뀝니다. 한 종목을 옮기면 그 종목을 가진 모든 계좌의 보유분이 함께 옮겨집니다.</p>
       <div class="tbl-wrap"><table class="tbl comp-tbl">
@@ -97,8 +97,12 @@
 
   function bindComposition(main, instruments) {
     main.querySelector('#btn-sync').onclick = async () => {
-      const r = await DataService.syncCatalog();
-      App.toast(r.renamed.length ? `목록을 최신화했습니다. 종목명 변경 ${r.renamed.length}건: ${r.renamed.map(x => `${x.from} → ${x.to}`).join(', ')}` : '목록을 최신화했습니다. 바뀐 종목명은 없습니다.');
+      const btn = main.querySelector('#btn-sync');
+      btn.disabled = true; btn.textContent = '최신화 중… (최대 1분)';
+      try {
+        const r = await DataService.syncCatalog();
+        App.toast(r.renamed.length ? `목록을 최신화했습니다 (${Fmt.plain(r.count)}개). 종목명 변경 ${r.renamed.length}건: ${r.renamed.map(x => `${x.from} → ${x.to}`).join(', ')}` : `목록을 최신화했습니다 (${Fmt.plain(r.count)}개). 바뀐 종목명은 없습니다.`);
+      } catch (e) { App.toast(e.message, 'error'); btn.disabled = false; btn.textContent = '↻ 목록 최신화'; }
     };
     main.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
       const inst = instruments.find(i => i.id === b.dataset.remove);
@@ -117,7 +121,7 @@
   }
 
   async function addToGroup(code) {
-    const pick = await UI.pickInstrument({ title: `${Groups.name(code)}에 종목 추가`, confirmLabel: '추가', allowNew: true, note: '등록된 종목과 외부 종목 목록(현금·RP 포함)에서 검색합니다.' });
+    const pick = await UI.pickInstrument({ title: `${Groups.name(code)}에 종목 추가`, confirmLabel: '추가', allowNew: true, note: '등록된 종목과 전체 상장 종목 목록(현금·RP 포함)에서 검색합니다.' });
     if (!pick) return;
     if (pick.__new) {
       const created = await newInstrumentForm(code); // 직접 등록 시 이 자산군으로 바로 지정됨
@@ -303,7 +307,7 @@
 
   // ---------------- 보유 추가 ----------------
   async function addHoldingFlow(account) {
-    const pick = await UI.pickInstrument({ title: `${account.name} — 종목 추가`, confirmLabel: '다음', allowNew: true, note: '등록된 종목과 외부 종목 목록에서 이름/심볼/영문명으로 검색해 한 종목을 선택하세요.' });
+    const pick = await UI.pickInstrument({ title: `${account.name} — 종목 추가`, confirmLabel: '다음', allowNew: true, note: '등록된 종목과 전체 상장 종목 목록에서 이름/심볼/영문명으로 검색해 한 종목을 선택하세요.' });
     if (!pick) return;
     const inst = pick.__new ? await newInstrumentForm() : pick;
     if (!inst) return;

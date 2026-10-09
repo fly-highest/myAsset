@@ -247,8 +247,8 @@ window.UI = (function () {
           <input type="search" id="pick-q" placeholder="이름 / 심볼 / 영문명으로 검색 (예: QQQ, 나스닥, Samsung)" autocomplete="off">
           <div class="search-list" id="pick-list"></div>
           <div class="pick-foot small muted">
-            <span>${allowNew ? '외부 종목 목록에도 없나요? <button type="button" class="btn btn-sm" id="pick-new">+ 직접 등록</button>' : ''}</span>
-            <span><span id="pick-sync-info"></span> <button type="button" class="btn btn-sm" id="pick-sync" title="외부 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button></span>
+            <span>${allowNew ? '상장 종목 목록에도 없나요? <button type="button" class="btn btn-sm" id="pick-new">+ 직접 등록</button>' : ''}</span>
+            <span><span id="pick-sync-info"></span> <button type="button" class="btn btn-sm" id="pick-sync" title="전체 상장 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button></span>
           </div>`,
         onClose: () => { if (!resolved) resolve(null); },
         buttons: [
@@ -258,14 +258,21 @@ window.UI = (function () {
       });
       const list = m.body.querySelector('#pick-list');
       const ok = m.footer.querySelector('#pick-ok');
+      let seq = 0, timer = null;
       async function search() {
-        const items = await DataService.searchCatalog(m.body.querySelector('#pick-q').value);
-        list.innerHTML = items.map((i, idx) => `
+        const q = m.body.querySelector('#pick-q').value;
+        const my = ++seq;
+        let items;
+        try { items = await DataService.searchCatalog(q); }
+        catch (e) { list.innerHTML = `<div class="muted center" style="padding:16px">종목 목록을 불러오지 못했습니다: ${esc(e.message)}</div>`; return; }
+        if (my !== seq) return; // 더 최근 검색이 있으면 이 결과는 버림
+        const hint = !q.trim() ? '<div class="muted small" style="padding:8px 12px">이름·종목코드·영문명을 입력하면 전체 상장 종목에서 찾습니다. (지금은 등록된 종목만 표시)</div>' : '';
+        list.innerHTML = hint + (items.map((i, idx) => `
           <div class="search-item" data-idx="${idx}">
-            <div><b>${esc(i.name)}</b> <span class="muted small">${esc(i.eng_name || '')}</span>
-              <div class="meta">${esc(i.symbol)} · ${esc(i.exchange)} · ${esc(i.asset_type)} · ${esc(i.currency)}</div></div>
-            <div>${i.registered ? groupBadge(Groups.of(i), !i.asset_group, { link: false }) : '<span class="tag" title="외부 종목 목록에서 찾은 종목 — 선택하면 등록됩니다">외부 목록</span>'}</div>
-          </div>`).join('') || '<div class="muted center" style="padding:16px">검색 결과가 없습니다</div>';
+            <div><b>${esc(i.name)}</b> <span class="muted small">${esc(i.eng_name && i.eng_name !== i.name ? i.eng_name : '')}</span>
+              <div class="meta">${esc(i.symbol)} · ${esc(i.market || i.exchange)} · ${esc(i.asset_type)} · ${esc(i.currency)}</div></div>
+            <div>${i.registered ? groupBadge(Groups.of(i), !i.asset_group, { link: false }) : '<span class="tag" title="전체 상장 종목 목록에서 찾은 종목 — 선택하면 등록됩니다">상장 종목</span>'}</div>
+          </div>`).join('') || '<div class="muted center" style="padding:16px">검색 결과가 없습니다</div>');
         list.querySelectorAll('.search-item').forEach(el => {
           const inst = items[+el.dataset.idx];
           el.addEventListener('click', () => {
@@ -276,20 +283,30 @@ window.UI = (function () {
           el.addEventListener('dblclick', () => { selected = inst; finish(m, selected); });
         });
       }
-      m.body.querySelector('#pick-q').addEventListener('input', search);
+      // 입력이 잠시 멈추면 검색 (글자마다 DB 를 조회하지 않도록)
+      m.body.querySelector('#pick-q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
       const nb = m.body.querySelector('#pick-new');
       if (nb) nb.addEventListener('click', () => finish(m, { __new: true }));
       // 목록 최신화: 외부 목록을 지금 다시 받아오고 새 종목명을 반영한 뒤 검색 결과를 다시 보여 줍니다
       const info = m.body.querySelector('#pick-sync-info');
-      const showInfo = async () => { const c = await DataService.getCatalogInfo(); info.textContent = `${c.count}개 · 갱신 ${Fmt.mdhm(c.syncedAt)}`; };
+      const showInfo = async () => {
+        const c = await DataService.getCatalogInfo();
+        info.textContent = `상장 종목 ${Fmt.plain(c.count)}개 · 갱신 ${c.syncedAt ? Fmt.mdhm(c.syncedAt) : '—'}`;
+        info.title = `다음 자동 갱신 ${Fmt.mdhm(c.nextSyncAt)}${c.message ? '\n' + c.message : ''}`;
+      };
       m.body.querySelector('#pick-sync').addEventListener('click', async e => {
         const btn = e.currentTarget;
         btn.disabled = true;
-        const r = await DataService.syncCatalog();
+        const label = btn.textContent;
+        btn.textContent = '최신화 중… (최대 1분)';
+        try {
+          const r = await DataService.syncCatalog();
+          App.toast(r.renamed.length ? `목록을 최신화했습니다 (${Fmt.plain(r.count)}개). 종목명 변경 ${r.renamed.length}건: ${r.renamed.map(x => `${x.from} → ${x.to}`).join(', ')}` : `목록을 최신화했습니다 (${Fmt.plain(r.count)}개). 바뀐 종목명은 없습니다.`);
+        } catch (err) { App.toast(err.message, 'error'); }
         btn.disabled = false;
+        btn.textContent = label;
         await showInfo();
         await search();
-        App.toast(r.renamed.length ? `목록을 최신화했습니다. 종목명 변경 ${r.renamed.length}건: ${r.renamed.map(x => `${x.from} → ${x.to}`).join(', ')}` : '목록을 최신화했습니다. 바뀐 종목명은 없습니다.');
       });
       showInfo();
       search();

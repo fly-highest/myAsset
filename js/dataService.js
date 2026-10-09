@@ -260,61 +260,159 @@ window.DataService = (function () {
     return clone(inst);
   }
   // ---------------------------------------------------------------
-  // 외부 종목 목록 (catalog) — 한 달에 한 번 외부에서 받아와 DB 에 저장, 검색은 저장된 목록을 조회
-  // (Mock: mock/catalog.js 를 '저장된 목록'으로 사용. 실제 연동 시 월 1회 Edge Function + Cron 으로 갱신)
+  // 전체 종목 목록 (DB securities, 약 17,000개) — 매월 1일 서버(sync-securities)가 외부에서 받아 갱신
+  //   국내 주식 KIND · 국내 ETF 네이버 · 미국 NASDAQ Trader · 업비트
+  // DB 에 연결할 수 없으면(오프라인·자체 점검) mock/catalog.js 의 예시 목록을 씁니다.
   // ---------------------------------------------------------------
   const catalogKey = x => instKey(x.symbol, x.exchange);
-  function catalogFind(symbol, exchange) {
-    const k = instKey(symbol, exchange);
-    return MOCK.catalog.items.find(x => catalogKey(x) === k) || null;
+  const useDb = () => !!(SB && SB.url);
+  const SEC_COLS = 'symbol,exchange,name,eng_name,asset_type,currency,market,listed';
+  // 심볼 목록으로 종목 조회 (100개씩 나눠서)
+  async function lookupSecurities(symbols) {
+    const uniq = [...new Set((symbols || []).map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+    if (!useDb()) return MOCK.catalog.items.filter(c => uniq.includes(c.symbol.toUpperCase()));
+    const out = [];
+    for (let i = 0; i < uniq.length; i += 100) {
+      const part = uniq.slice(i, i + 100).map(s => '"' + s.replace(/"/g, '') + '"').join(',');
+      out.push(...await sbGet(`securities?select=${SEC_COLS}&symbol=in.(${encodeURIComponent(part)})`));
+    }
+    return out;
+  }
+  // 전체 목록 (엑셀 '종목목록' 시트용). 한 번 받으면 페이지를 닫을 때까지 재사용
+  let allSecCache = null;
+  async function allSecurities() {
+    if (!useDb()) return MOCK.catalog.items;
+    if (allSecCache) return allSecCache;
+    const out = [];
+    for (let offset = 0; ; offset += 1000) {
+      const part = await sbGet(`securities?select=symbol,exchange,name,eng_name,asset_type,currency&listed=is.true&order=exchange.asc,symbol.asc&limit=1000&offset=${offset}`);
+      out.push(...part);
+      if (part.length < 1000) break;
+    }
+    return (allSecCache = out);
+  }
+  async function sbCount(path) {
+    const r = await fetch(`${SB.url}/rest/v1/${path}`, { method: 'HEAD', headers: { apikey: SB.key, Prefer: 'count=exact' } });
+    const m = /\/(\d+)$/.exec(r.headers.get('content-range') || '');
+    return m ? +m[1] : null;
+  }
+  // 다음 정기 갱신 = 다음 달 1일 09:00 KST (서버 cron: 매월 1일 00:00 UTC)
+  function nextMonthlySync() {
+    const n = new Date();
+    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 1, 0, 0)).toISOString();
   }
   async function getCatalogInfo() {
-    const syncedAt = state.meta.catalogSyncedAt || MOCK.catalog.synced_at;
-    const next = new Date(syncedAt);
-    next.setMonth(next.getMonth() + 1);
-    return { count: MOCK.catalog.items.length, syncedAt, nextSyncAt: next.toISOString() };
+    if (!useDb()) {
+      const syncedAt = state.meta.catalogSyncedAt || MOCK.catalog.synced_at;
+      const next = new Date(syncedAt);
+      next.setMonth(next.getMonth() + 1);
+      return { count: MOCK.catalog.items.length, syncedAt, nextSyncAt: next.toISOString(), source: 'MOCK' };
+    }
+    try {
+      const [runs, count] = await Promise.all([
+        sbGet('securities_runs?select=finished_at,message,counts&finished_at=not.is.null&order=finished_at.desc&limit=1'),
+        sbCount('securities?select=symbol&listed=is.true')
+      ]);
+      return { count: count ?? 0, syncedAt: runs[0] ? runs[0].finished_at : null, nextSyncAt: nextMonthlySync(), message: runs[0] && runs[0].message, source: 'DB' };
+    } catch (e) {
+      return { count: 0, syncedAt: null, nextSyncAt: nextMonthlySync(), message: '종목 목록 DB 에 연결하지 못했습니다', source: 'ERROR' };
+    }
   }
-  // 목록 최신화: 외부 목록을 다시 받아 저장하고, 이미 등록된 종목은 심볼+거래소가 같으면 새 종목명으로 바꿉니다.
-  // (Mock: 외부 목록 = mock/catalog.js. 실제로는 외부에서 받아 DB 의 목록을 교체)
-  // 보유·자산군은 종목 고유번호(id)로 연결되어 있어 이름이 바뀌어도 그대로 유지됩니다. 과거 스냅샷은 당시 이름 그대로.
-  async function syncCatalog() {
+  // 등록된 종목의 이름을 최신 목록 이름으로 맞춤 (심볼+거래소가 같은 종목만)
+  //  - 국내(KRX)·업비트: 한글 이름을 새 이름으로 바꿈
+  //  - 미국: 목록 이름이 영문이므로, 직접 붙인 한글 이름은 그대로 두고 영문명(eng_name)만 갱신
+  async function applyCatalogNames() {
+    const regs = state.instruments.filter(i => i.asset_type !== 'CASH');
+    const secs = await lookupSecurities(regs.map(i => i.symbol));
+    const byKey = new Map(secs.map(c => [catalogKey(c), c]));
     const renamed = [];
-    state.instruments.forEach(inst => {
-      const c = catalogFind(inst.symbol, inst.exchange);
+    regs.forEach(inst => {
+      const c = byKey.get(catalogKey(inst));
       if (!c) return;
-      if (c.name !== inst.name || (c.eng_name && c.eng_name !== inst.eng_name)) {
-        if (c.name !== inst.name) renamed.push({ symbol: inst.symbol, exchange: inst.exchange, from: inst.name, to: c.name });
-        inst.name = c.name;
-        if (c.eng_name) inst.eng_name = c.eng_name;
-        inst.updated_at = nowISO();
+      const koreanList = !useDb() || ['KRX', 'UPBIT'].includes(inst.exchange);
+      let changed = false;
+      if (koreanList && c.name && c.name !== inst.name) {
+        renamed.push({ symbol: inst.symbol, exchange: inst.exchange, from: inst.name, to: c.name });
+        inst.name = c.name; changed = true;
       }
+      if (c.eng_name && c.eng_name !== inst.eng_name) { inst.eng_name = c.eng_name; changed = true; }
+      if (changed) inst.updated_at = nowISO();
     });
-    state.meta.catalogSyncedAt = nowISO();
-    commit();
-    return { ...(await getCatalogInfo()), renamed };
+    return renamed;
   }
-  // 정기 갱신: 다음 갱신 시각이 지났으면 자동으로 최신화 (실제로는 매월 서버의 Cron 이 실행)
+  // [↻ 목록 최신화]: 서버에서 외부 목록을 지금 다시 받고(10분에 1번), 등록 종목 이름을 맞춥니다
+  async function syncCatalog() {
+    if (useDb()) {
+      const r = await fetch(`${SB.url}/functions/v1/sync-securities?trigger=manual`, { method: 'POST', headers: { apikey: SB.key } });
+      const body = await r.json().catch(() => ({ ok: false, message: 'HTTP ' + r.status }));
+      if (!body.ok) throw fail(body.message || '종목 목록을 최신화하지 못했습니다.');
+      allSecCache = null;
+    }
+    const renamed = await applyCatalogNames();
+    const info = await getCatalogInfo();
+    state.meta.catalogSyncedAt = info.syncedAt || nowISO();
+    commit();
+    return { ...info, renamed };
+  }
+  // 페이지를 열 때: 서버의 정기 갱신(매월) 이후 처음이면 등록 종목 이름을 새 이름으로 맞춤
   async function autoSyncCatalogIfDue() {
     const info = await getCatalogInfo();
-    if (new Date() >= new Date(info.nextSyncAt)) return syncCatalog();
-    return null;
+    if (!useDb()) return new Date() >= new Date(info.nextSyncAt) ? syncCatalog() : null;
+    if (!info.syncedAt || info.syncedAt === state.meta.catalogSyncedAt) return null;
+    const renamed = await applyCatalogNames();
+    state.meta.catalogSyncedAt = info.syncedAt;
+    commit();
+    return { ...info, renamed };
   }
-  // 종목 검색: 이미 등록된 종목(registered) + 외부 목록에만 있는 종목을 함께 돌려줍니다.
+  // 종목 검색: 이미 등록된 종목(registered) + 전체 종목 목록에서 찾은 종목
   async function searchCatalog(q) {
-    const s = String(q || '').trim().toLowerCase();
-    const match = x => !s || [x.name, x.symbol, x.eng_name].some(v => String(v || '').toLowerCase().includes(s));
+    const s = String(q || '').trim();
+    const low = s.toLowerCase();
+    const match = x => !low || [x.name, x.symbol, x.eng_name].some(v => String(v || '').toLowerCase().includes(low));
     const regKeys = new Set(state.instruments.map(catalogKey));
     const list = state.instruments.filter(match).map(i => ({ ...clone(i), registered: true }));
-    MOCK.catalog.items.filter(x => !regKeys.has(catalogKey(x)) && match(x))
+    let found;
+    if (!useDb()) found = MOCK.catalog.items.filter(match);
+    else if (!s) found = []; // 검색어가 없으면 등록된 종목만
+    else {
+      const term = s.replace(/[%,()*"\\]/g, ' ').trim();
+      const pat = encodeURIComponent(`*${term}*`);
+      found = term ? await sbGet(`securities?select=${SEC_COLS}&listed=is.true&or=(symbol.ilike.${pat},name.ilike.${pat},eng_name.ilike.${pat})&limit=80`) : [];
+      // 심볼이 정확히 같은 종목 → 심볼이 검색어로 시작 → 이름에 포함 순서
+      const up = term.toUpperCase();
+      const rank = x => (x.symbol.toUpperCase() === up ? 0 : x.symbol.toUpperCase().startsWith(up) ? 1 : String(x.name).toUpperCase().startsWith(up) ? 2 : 3);
+      found.sort((a, b) => rank(a) - rank(b) || String(a.name).length - String(b.name).length);
+    }
+    found.filter(x => !regKeys.has(catalogKey(x))).slice(0, 60)
       .forEach(x => list.push({ ...x, id: null, asset_group: null, registered: false }));
     return list;
   }
-  // 검색 결과에서 고른 종목이 아직 등록 전이면 종목 마스터에 등록하고 돌려줍니다.
+  // 검색 결과에서 고른 종목이 아직 등록 전이면 종목 마스터에 등록하고 돌려줍니다. (시세 대상에도 추가)
   async function ensureInstrument(entry) {
     if (entry.id) return clone(state.instruments.find(i => i.id === entry.id));
     const found = state.instruments.find(i => catalogKey(i) === catalogKey(entry));
     if (found) return clone(found);
-    return addInstrument({ ...entry, asset_group: null });
+    const inst = await addInstrument({ name: entry.name, eng_name: entry.eng_name, symbol: entry.symbol, exchange: entry.exchange, asset_type: entry.asset_type, currency: entry.currency, asset_group: null });
+    trackInstruments([inst]);
+    return inst;
+  }
+  // 서버에 '이 종목들 현재가가 필요하다'고 알림 → 시세 대상에 추가 (전체 종목 목록에 있는 종목만 받아들여짐)
+  function trackInstruments(list) {
+    if (!useDb()) return;
+    const items = (list || state.instruments).filter(i => i.asset_type !== 'CASH').map(i => ({ symbol: i.symbol, exchange: i.exchange }));
+    if (!items.length) return;
+    fetch(`${SB.url}/functions/v1/update-prices?track=1`, {
+      method: 'POST', headers: { apikey: SB.key, 'Content-Type': 'application/json' }, body: JSON.stringify({ items })
+    }).catch(() => { /* 다음 접속 때 다시 알림 */ });
+  }
+  // 페이지를 열 때 하루 한 번 등록 종목 전체를 알림 (오래 안 쓰인 종목은 서버가 45일 뒤 제외)
+  function trackDaily() {
+    try {
+      const key = 'myAsset.trackedOn', today = Fmt.todayKST();
+      if (localStorage.getItem(key) === today) return;
+      localStorage.setItem(key, today);
+    } catch (e) { /* 저장소를 못 쓰면 매번 알림 */ }
+    trackInstruments();
   }
 
   // 자산군 매핑 변경 — instruments.asset_group UPDATE 만 합니다 (7항). group=null 이면 해제.
@@ -533,11 +631,13 @@ window.DataService = (function () {
     return isNaN(d) || d.toISOString().slice(0, 10) !== s ? null : s;
   }
 
-  // DB 기준 종목 정보 = 등록된 종목 + 외부 종목 목록 (심볼+거래소 기준 중복 제거)
-  function symbolRefs() {
+  // DB 기준 종목 정보 = 등록된 종목 + 전체 종목 목록 (심볼+거래소 기준 중복 제거, 등록된 종목 우선)
+  // symbols 를 주면 그 심볼만 조회(업로드 점검), 생략하면 전체 목록(엑셀 종목목록 시트)
+  async function symbolRefs(symbols) {
     const map = new Map();
-    state.instruments.forEach(i => map.set(catalogKey(i), { id: i.id, symbol: i.symbol, exchange: i.exchange, name: i.name, asset_type: i.asset_type, currency: i.currency }));
-    MOCK.catalog.items.forEach(c => {
+    state.instruments.forEach(i => map.set(catalogKey(i), { id: i.id, symbol: i.symbol, exchange: i.exchange, name: i.name, asset_type: i.asset_type, currency: i.currency, eng_name: i.eng_name }));
+    const secs = symbols ? await lookupSecurities(symbols) : await allSecurities();
+    secs.forEach(c => {
       const k = catalogKey(c);
       if (!map.has(k)) map.set(k, { id: null, symbol: c.symbol, exchange: c.exchange, name: c.name, asset_type: c.asset_type, currency: c.currency, eng_name: c.eng_name });
     });
@@ -593,7 +693,10 @@ window.DataService = (function () {
         if (parsed.baseDate < state.meta.baseDate) add(warnings, '-', '기준일자', parsed.baseDate, `기준일자가 현재 현황의 기준일(${state.meta.baseDate})보다 이전입니다`);
       }
     }
-    const refs = symbolRefs();
+    const fileSymbols = parsed.rows.flatMap(({ raw }) => { const s = String(raw['심볼'] ?? '').trim().toUpperCase(); return /^\d{1,5}$/.test(s) ? [s, s.padStart(6, '0')] : [s]; });
+    let refs;
+    try { refs = await symbolRefs(fileSymbols); }
+    catch (e) { refs = await symbolRefs([]); errors.push({ row: '-', col: '심볼', value: '', expected: '', reason: '종목 목록 DB 에 연결하지 못해 등록된 종목만 확인했습니다: ' + e.message }); }
     const brokerNames = state.brokers.map(b => b.name), typeNames = state.accountTypes.map(t => t.name);
     const rows = [], seen = {}, accInfo = {}, newSeen = {};
 
@@ -627,7 +730,7 @@ window.DataService = (function () {
       else {
         const cands = refs.filter(r => r.symbol.toUpperCase() === symbol);
         const hit = exIn ? cands.filter(r => r.exchange === exIn) : cands;
-        if (!cands.length) err('심볼', 'DB(종목 마스터·외부 종목 목록)에 없는 심볼입니다', '종목목록 시트 참고', symbol);
+        if (!cands.length) err('심볼', 'DB(종목 마스터·전체 상장 종목 목록)에 없는 심볼입니다', '종목목록 시트 참고', symbol);
         else if (!hit.length) err('거래소', '이 심볼의 거래소가 DB와 다릅니다', cands.map(r => r.exchange).join(', '));
         else if (hit.length > 1) err('거래소', '같은 심볼이 여러 거래소에 있습니다. 거래소를 입력해 주세요', hit.map(r => r.exchange).join(', '));
         else ref = hit[0];
@@ -641,7 +744,7 @@ window.DataService = (function () {
           if (v !== ref[f]) err(col, 'DB 값과 다릅니다', ref[f]);
         });
         const k = catalogKey(ref);
-        if (!ref.id && !newSeen[k]) { newSeen[k] = true; warn('심볼', '외부 종목 목록에 있는 종목이라 종목 마스터에 새로 등록됩니다', `${ref.symbol}/${ref.exchange} ${ref.name}`); }
+        if (!ref.id && !newSeen[k]) { newSeen[k] = true; warn('심볼', '전체 상장 종목 목록에 있는 종목이라 종목 마스터에 새로 등록됩니다', `${ref.symbol}/${ref.exchange} ${ref.name}`); }
         if (acc) {
           const dk = acc + '|' + k;
           if (seen[dk]) err('심볼', `같은 계좌에 같은 종목이 중복됩니다 (${seen[dk]}행과 중복)`, '', `${ref.symbol}/${ref.exchange}`);
@@ -673,7 +776,7 @@ window.DataService = (function () {
 
       rows.push({
         rowNo, account: acc, broker, accType, memo,
-        symbol: ref ? ref.symbol : symbol, exchange: ref ? ref.exchange : exIn, name: ref ? ref.name : s('종목명'),
+        symbol: ref ? ref.symbol : symbol, exchange: ref ? ref.exchange : exIn, name: ref ? ref.name : s('종목명'), eng_name: ref ? ref.eng_name || '' : '',
         asset_type: ref ? ref.asset_type : '', currency,
         quantity: q, avg_price: isCash ? 1 : ap, avg_fx_rate: currency === 'USD' ? fxv : 1,
         existingId: ref ? ref.id : null
@@ -691,8 +794,7 @@ window.DataService = (function () {
       const k = instKey(r.symbol, r.exchange);
       let inst = byKey[k];
       if (!inst) { // 외부 종목 목록에 있는 종목 → 종목 마스터에 등록 (자산군은 미지정)
-        const cat = catalogFind(r.symbol, r.exchange) || {};
-        inst = { id: uid('ins'), user_id: USER, name: r.name, eng_name: cat.eng_name || '', symbol: r.symbol, exchange: r.exchange, asset_type: r.asset_type, currency: r.currency, asset_group: null, created_at: now, updated_at: now };
+        inst = { id: uid('ins'), user_id: USER, name: r.name, eng_name: r.eng_name || '', symbol: r.symbol, exchange: r.exchange, asset_type: r.asset_type, currency: r.currency, asset_group: null, created_at: now, updated_at: now };
         instruments.push(inst);
         byKey[k] = inst;
       }
@@ -740,6 +842,7 @@ window.DataService = (function () {
     state.meta.changedSinceSnapshot = true;
     state.meta.importBackup = backup;
     commit();
+    trackInstruments();
     return { accountCount: next.accounts.length, holdingCount: next.holdings.length };
   }
   async function undoLastImport() {
@@ -830,7 +933,7 @@ window.DataService = (function () {
     const list = wb.addWorksheet('종목목록', { views: [{ state: 'frozen', ySplit: 1 }] });
     list.addRow(['심볼', '종목명', '거래소', '자산유형', '통화']).eachCell(c => { c.font = bold; c.fill = headFill; });
     list.getColumn(1).numFmt = '@';
-    symbolRefs().forEach(x => list.addRow([x.symbol, x.name, x.exchange, x.asset_type, x.currency]));
+    (await symbolRefs()).forEach(x => list.addRow([x.symbol, x.name, x.exchange, x.asset_type, x.currency]));
     [12, 34, 10, 10, 7].forEach((w, j) => { list.getColumn(j + 1).width = w; });
 
     // 선택목록: 증권 마스터 (드롭다운 원본)
@@ -886,7 +989,7 @@ window.DataService = (function () {
     getAccounts, addAccount, updateAccount, deleteAccount,
     getBrokers, getAccountTypes, addMaster, updateMaster, deleteMaster,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
-    getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument,
+    getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices,
     getSnapshots, getSnapshotItems, createDailySnapshot,

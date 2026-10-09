@@ -4,9 +4,11 @@
 //   GET  ...?tickers=1          → Google 시트(IMPORTDATA)가 읽는 티커 목록 (한 줄에 하나)
 //   POST ...?trigger=manual     → 사이트의 [↻ 시세 갱신] 버튼
 //   POST ...?trigger=cron       → 매시 정각 자동 실행 (pg_cron)
+//   POST ...?track=1 {items}    → 사이트가 쓰는 종목을 시세 대상으로 등록 (전체 종목 목록에 있는 것만)
 //
 // 가격 출처
 //   GOOGLE : Google 시트의 GOOGLEFINANCE 결과 (웹에 게시한 CSV, 비밀값 GSHEET_CSV_URL)
+//   NAVER  : 국내 ETF 중 Google 시세가 없는 종목은 네이버 금융 ETF 시세로 대체
 //   UPBIT  : 업비트 공개 시세 API (원화 마켓)
 //   GOLD   : KRX 금현물(1g) = 국제 금시세(XAU/USD, 온스) ÷ 31.1034768 × USD/KRW
 //   CASH   : 항상 1 (저장하지 않음)
@@ -53,6 +55,24 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
+  // 0) 사이트가 쓰는 종목을 시세 대상으로 등록 (전체 종목 목록 securities 에 있는 종목만)
+  if (url.searchParams.has('track')) {
+    let items: { symbol?: string; exchange?: string }[] = [];
+    try { items = ((await req.json()).items || []).slice(0, 300); } catch { /* 빈 요청 */ }
+    const want = new Set(items.filter((x) => x?.symbol && x?.exchange).map((x) => String(x.symbol).toUpperCase() + '@' + String(x.exchange).toUpperCase()));
+    if (!want.size) return json({ ok: true, tracked: 0 });
+    const symbols = [...new Set([...want].map((k) => k.split('@')[0]))];
+    const { data: secs } = await db.from('securities').select('symbol,exchange,name,asset_type,currency,google_ticker,upbit_market').in('symbol', symbols);
+    const now = new Date().toISOString();
+    const rows = (secs || []).filter((s) => want.has(s.symbol.toUpperCase() + '@' + s.exchange)).map((s) => ({
+      symbol: s.symbol, exchange: s.exchange, name: s.name, asset_type: s.asset_type, currency: s.currency,
+      source: s.asset_type === 'CASH' ? 'CASH' : s.exchange === 'UPBIT' ? 'UPBIT' : s.asset_type === 'GOLD' ? 'GOLD' : 'GOOGLE',
+      google_ticker: s.google_ticker, upbit_market: s.upbit_market, active: true, last_requested_at: now, updated_at: now
+    }));
+    if (rows.length) await db.from('price_targets').upsert(rows, { onConflict: 'symbol,exchange' });
+    return json({ ok: true, tracked: rows.length, unknown: want.size - rows.length });
+  }
+
   const { data: targets, error: tErr } = await db.from('price_targets').select('*').eq('active', true);
   if (tErr) return json({ ok: false, message: tErr.message }, 500);
 
@@ -95,9 +115,23 @@ Deno.serve(async (req) => {
   const fx = g.get('CURRENCY:USDKRW') ?? null;
   const xau = g.get('CURRENCY:XAUUSD') ?? null;
 
+  // 국내 ETF 는 Google 에 시세가 없으면 네이버 금융 ETF 시세로 대신합니다 (한 번만 받아 재사용)
+  let naver: Map<string, number> | null = null;
+  const naverEtf = async () => {
+    if (naver) return naver;
+    naver = new Map();
+    try {
+      const r = await fetch('https://finance.naver.com/api/sise/etfItemList.nhn?etfType=0&targetColumn=market_sum&sortOrder=desc', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const body = JSON.parse(new TextDecoder('euc-kr').decode(await r.arrayBuffer()));
+      for (const e of body?.result?.etfItemList || []) if (Number(e.nowVal) > 0) naver.set(String(e.itemcode), Number(e.nowVal));
+    } catch { /* 네이버 실패 시 대체 없음 */ }
+    return naver;
+  };
   for (const t of targets.filter((t) => t.source === 'GOOGLE')) {
     const p = t.google_ticker ? g.get(String(t.google_ticker).toUpperCase()) : null;
-    if (p) rows.push({ symbol: t.symbol, exchange: t.exchange, price: p, currency: t.currency, source: 'GOOGLE', as_of: now, updated_at: now });
+    if (p) { rows.push({ symbol: t.symbol, exchange: t.exchange, price: p, currency: t.currency, source: 'GOOGLE', as_of: now, updated_at: now }); continue; }
+    const n = t.exchange === 'KRX' && t.asset_type === 'ETF' ? (await naverEtf()).get(t.symbol) : null;
+    if (n) rows.push({ symbol: t.symbol, exchange: t.exchange, price: n, currency: 'KRW', source: 'NAVER', as_of: now, updated_at: now });
     else fail(t, sheetNote || `Google 시세 없음 (${t.google_ticker})`);
   }
 
@@ -134,6 +168,9 @@ Deno.serve(async (req) => {
   if (fx) fxRows.push({ pair: 'USD/KRW', rate: fx, source: 'GOOGLE', as_of: now, updated_at: now });
   if (xau) fxRows.push({ pair: 'XAU/USD', rate: xau, source: 'GOOGLE', as_of: now, updated_at: now });
   if (fxRows.length) await db.from('fx_rates').upsert(fxRows, { onConflict: 'pair' });
+
+  // 45일 동안 사이트에서 요청이 없던 종목은 시세 대상에서 제외 (Google 시트 부담 줄이기)
+  await db.from('price_targets').update({ active: false }).lt('last_requested_at', new Date(Date.now() - 45 * 86400_000).toISOString());
 
   const message = [sheetNote, `성공 ${rows.length} · 실패 ${failures.length}`].filter(Boolean).join(' / ');
   if (run) await db.from('price_runs').update({ finished_at: new Date().toISOString(), ok_count: rows.length, fail_count: failures.length, failures, message }).eq('id', run.id);
