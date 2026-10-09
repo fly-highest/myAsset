@@ -273,3 +273,11 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .tree .broker-row td { background: #e8eef9; font-size: 13.5px; border-top: 2px solid #c9d6f0; }
 .steps-list { margin: 8px 0 12px; padding-left: 20px; line-height: 1.9; }
 .upload-card { max-width: 860px; }
+.date-box { position: relative; display: inline-flex; align-items: center; border: 1px solid #cfd5df; border-radius: 7px; background: #fff; }
+.date-box input[type=text] { border: 0; width: 108px; padding: 5px 8px; font-size: 13px; font-variant-numeric: tabular-nums; background: transparent; }
+.date-box input[type=text]:focus { outline: none; }
+.date-box:focus-within { outline: 2px solid #b8c9f7; border-color: var(--primary); }
+.date-box input.invalid { color: var(--danger); }
+.date-box .cal-btn { border: 0; background: none; padding: 4px 8px 4px 2px; cursor: pointer; color: var(--muted); display: inline-flex; }
+.date-box .cal-btn:hover { color: var(--primary); }
+.date-box .date-pick { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }

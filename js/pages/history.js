@@ -61,9 +61,9 @@
       <div class="sec toolbar">
         <div class="period">${RANGES.map(([k, l]) => `<button type="button" data-range="${k}" class="${k === range ? 'on' : ''}">${l}</button>`).join('')}</div>
         <div class="toolbar date-range">
-          <input type="date" id="d-from" value="${fromVal}" max="${today}" aria-label="시작일">
+          ${dateBox('d-from', fromVal, today, '시작일')}
           <span class="muted">~</span>
-          <input type="date" id="d-to" value="${toVal}" max="${today}" aria-label="종료일">
+          ${dateBox('d-to', toVal, today, '종료일')}
         </div>
         <span class="small muted">${snaps.length}일${snaps.length ? ` · ${snaps[0].snapshot_date} ~ ${last.snapshot_date}` : ' · 해당 기간에 스냅샷이 없습니다'}</span>
       </div>
@@ -91,15 +91,42 @@
 
     const main = document.getElementById('main');
     main.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { range = b.dataset.range; App.rerender(); });
-    const onDate = () => {
-      let f = main.querySelector('#d-from').value, t = main.querySelector('#d-to').value || today;
-      if (f && t && f > t) [f, t] = [t, f];
+    // 날짜 칸: 숫자를 직접 입력(예: 20260901 → 2026-09-01)하고 Enter 또는 칸 밖을 누르면 적용, 달력 버튼으로도 선택 가능
+    const applyDates = () => {
+      const fEl = main.querySelector('#d-from'), tEl = main.querySelector('#d-to');
+      let f = fEl.value.trim(), t = tEl.value.trim() || today;
+      const bad = [fEl, tEl].filter(el => el.value.trim() && !validDate(el.value.trim()));
+      [fEl, tEl].forEach(el => el.classList.toggle('invalid', bad.includes(el)));
+      if (bad.length) { App.toast('날짜는 2026-09-01 처럼 입력해 주세요.', 'error'); return; }
+      if (f > today) f = today;
+      if (t > today) t = today;
+      if (f && f > t) [f, t] = [t, f];
+      if (range === 'CUSTOM' && custom.from === f && custom.to === t) return;
       custom = { from: f, to: t };
       range = 'CUSTOM';
       App.rerender();
     };
-    main.querySelector('#d-from').onchange = onDate;
-    main.querySelector('#d-to').onchange = onDate;
+    main.querySelectorAll('.date-box').forEach(box => {
+      const txt = box.querySelector('input[type=text]'), pick = box.querySelector('input[type=date]');
+      const before = txt.value;
+      txt.addEventListener('input', () => {
+        const d = txt.value.replace(/\D/g, '').slice(0, 8);
+        txt.value = d.length > 6 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d;
+        txt.classList.remove('invalid');
+      });
+      txt.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyDates(); } if (e.key === 'Escape') { txt.value = before; txt.blur(); } });
+      // 칸 밖으로 나가면 적용 (시작일 → 종료일로 옮겨 갈 때는 적용하지 않고 계속 입력)
+      txt.addEventListener('blur', () => setTimeout(() => {
+        if (main.querySelector('.date-range').contains(document.activeElement)) return;
+        const changed = [...main.querySelectorAll('.date-box input[type=text]')].some(el => el.value !== el.defaultValue);
+        if (changed) applyDates();
+      }, 0));
+      box.querySelector('.cal-btn').onclick = () => {
+        pick.value = validDate(txt.value) ? txt.value : '';
+        try { pick.showPicker(); } catch (e) { pick.focus(); }
+      };
+      pick.addEventListener('change', () => { if (pick.value) { txt.value = pick.value; applyDates(); } });
+    });
     main.querySelector('#btn-sim').onclick = async () => {
       const ok = await App.confirm(`<b>${status.nextSnapshotDate} 08:00</b> 스냅샷을 지금의 보유 상태로 생성합니다.<br><small>Mock 검수용 기능입니다. 생성된 스냅샷은 이후 보유를 바꿔도 변하지 않습니다.</small>`, { okLabel: '생성' });
       if (!ok) return;
@@ -114,6 +141,18 @@
       Charts.groupShare('ch-share-kr', snaps, models, mode, 'kr');
       Charts.groupShare('ch-share-us', snaps, models, mode, 'us');
     } else Charts.groupShare('ch-share', snaps, models, mode);
+  }
+
+  // 날짜 입력 칸 (직접 입력 + 달력 버튼)
+  function dateBox(id, value, max, label) {
+    return `<span class="date-box"><input type="text" id="${id}" value="${value}" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric" autocomplete="off" aria-label="${label}" title="숫자만 입력해도 됩니다 (예: 20260901). Enter 로 적용">` +
+      `<button type="button" class="cal-btn" title="달력에서 선택" aria-label="${label} 달력"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></button>` +
+      `<input type="date" class="date-pick" max="${max}" tabindex="-1" aria-hidden="true"></span>`;
+  }
+  function validDate(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const d = new Date(s + 'T00:00:00Z');
+    return !isNaN(d) && d.toISOString().slice(0, 10) === s;
   }
 
   DataService.onChange(() => modelCache.clear());
