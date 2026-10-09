@@ -77,8 +77,8 @@ window.DataService = (function () {
   }
   // 기본 증권사 목록에 나중에 추가한 항목을, 이미 쓰고 있는 브라우저에도 한 번만 넣어 줍니다.
   // (사용자가 지운 항목이 다시 생기지 않도록 넣은 항목을 meta.addedBrokers 에 기록)
-  // 증권사·계좌종류 모두 적용 (예: 메리츠증권, DC)
-  const LATER_MASTER = [['brokers', 'brk-meritz'], ['accountTypes', 'atp-dc']];
+  // 증권사·계좌종류 모두 적용 (예: 메리츠증권, DC, RIA)
+  const LATER_MASTER = [['brokers', 'brk-meritz'], ['accountTypes', 'atp-dc'], ['accountTypes', 'atp-ria']];
   function addNewDefaultBrokers() {
     state.meta.addedBrokers = state.meta.addedBrokers || [];
     let changed = false;
