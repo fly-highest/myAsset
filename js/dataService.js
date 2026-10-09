@@ -156,8 +156,29 @@ window.DataService = (function () {
     const fx = await getFxRate();
     return { ok: !!(L && L.ok), error: L && L.error, latestAsOf: latest, fx, run: L && L.run, liveCount, mockCount, missing };
   }
-  // [↻ 시세 갱신] 버튼: 서버 함수를 바로 실행하고 새 가격을 다시 읽습니다
+  // QQQ 200일선 신호: 최신 현재가(prices) vs 200일 이동평균(indicators)
+  //   zone: 'above' = 200일선 +1% 이상 / 'below' = −1% 이하 / 'between' = 그 사이
+  async function getQqqSignal() {
+    if (!SB || !SB.url) return null;
+    try {
+      const [ind, px] = await Promise.all([
+        sbGet('indicators?select=value,period,last_close,last_close_date,source,as_of&key=eq.QQQ_SMA200'),
+        sbGet('prices?select=price,source,as_of&symbol=eq.QQQ&exchange=eq.NASDAQ')
+      ]);
+      const sma = ind[0] ? Number(ind[0].value) : null;
+      const price = px[0] ? Number(px[0].price) : ind[0] ? Number(ind[0].last_close) : null;
+      if (!sma || !price) return null;
+      const diffPct = (price / sma - 1) * 100;
+      return {
+        price, priceSource: px[0] ? px[0].source : ind[0].source, priceAsOf: px[0] ? px[0].as_of : ind[0].as_of,
+        sma, period: ind[0].period, smaSource: ind[0].source, smaDate: ind[0].last_close_date, smaAsOf: ind[0].as_of,
+        diffPct, zone: diffPct >= 1 ? 'above' : diffPct <= -1 ? 'below' : 'between'
+      };
+    } catch (e) { return null; }
+  }
+  // [↻ 시세 갱신] 버튼: 서버 함수를 바로 실행하고 새 가격을 다시 읽습니다 (QQQ 200일선 지표도 함께 갱신)
   async function refreshPrices() {
+    fetch(`${SB.url}/functions/v1/update-indicators`, { method: 'POST', headers: { apikey: SB.key } }).catch(() => {});
     const r = await fetch(`${SB.url}/functions/v1/update-prices?trigger=manual`, { method: 'POST', headers: { apikey: SB.key } });
     const body = await r.json().catch(() => ({ ok: false, message: 'HTTP ' + r.status }));
     await loadLive(true);
@@ -1046,7 +1067,7 @@ window.DataService = (function () {
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     getHoldings, addHolding, updateHolding, deleteHolding,
-    getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices,
+    getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal,
     getSnapshots, getSnapshotItems, createDailySnapshot,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,

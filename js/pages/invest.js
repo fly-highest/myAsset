@@ -6,7 +6,9 @@
 (function () {
   async function render() {
     const { model, status } = await App.loadCurrentModel();
-    const [ps, plans] = await Promise.all([DataService.getPriceStatus(), DataService.getTargetPlans()]);
+    const [ps, plans, sig] = await Promise.all([DataService.getPriceStatus(), DataService.getTargetPlans(), DataService.getQqqSignal()]);
+    // 지금 해당하는 기준: 기본 기준(200일선 +1% 이상 / −1% 이하)과 QQQ 200일선 구간을 연결
+    const activeId = sig ? { above: 'tgt-above', below: 'tgt-below' }[sig.zone] : null;
     // 목표 비교는 하나의 통화로 합산해야 하므로 혼합 모드는 원화 기준으로 보여 줍니다
     const mode = App.mode === 'USD' ? 'USD' : 'KRW';
     const cur = mode;
@@ -19,8 +21,8 @@
     const pp = v => (Math.round(v * 100) / 100 > 0 ? '+' : Math.round(v * 100) / 100 < 0 ? Fmt.MINUS : '') + Math.abs(v).toFixed(2) + '%p';
 
     // ① 목표 행
-    const targetRows = plans.map(p => `<tr class="tgt-row">
-      <td class="nowrap sticky-col">${esc(p.name)} <span class="tag">목표</span>${p.sum !== 100 ? ` <span class="tag-warn" title="자산군 목표 비중 합계가 100%가 아닙니다">합계 ${p.sum}%</span>` : ''}</td>
+    const targetRows = plans.map(p => `<tr class="tgt-row${p.id === activeId ? ' active-plan' : ''}">
+      <td class="nowrap sticky-col">${esc(p.name)} <span class="tag">목표</span>${p.id === activeId ? ' <span class="tag tag-active">현재 해당</span>' : ''}${p.sum !== 100 ? ` <span class="tag-warn" title="자산군 목표 비중 합계가 100%가 아닙니다">합계 ${p.sum}%</span>` : ''}</td>
       <td class="num">${Fmt.money(conv(totalK), cur)}</td><td class="num">${muted}</td><td class="num">${muted}</td><td class="num">${muted}</td>
       <td class="num">${Fmt.fx(fx || 0)}</td>
       ${Groups.list.map((g, i) => gcell(i, Fmt.money(conv(totalK * (p.weights[g.code] || 0) / 100), cur))).join('')}
@@ -64,6 +66,7 @@
         <div class="toolbar"><a class="btn btn-sm" href="manage.html#composition">목표 비중 수정</a></div>
       </div>
       ${App.statusBar(status, { showSnapshot: false })}
+      ${signalCard(sig)}
       <div class="sec">${UI.totalsCards(model.total, mode, fx)}</div>
       <div class="sec">
         <div class="sec-hd"><h2>목표 대비 현재 자산 현황</h2>
@@ -87,5 +90,32 @@
         <p class="small muted">비중 칸의 매수·매도 행은 목표 % − 현재 % (%p, 퍼센트포인트) 입니다. 실제 주문 전에 수수료·세금·호가 단위를 따로 확인하세요.</p>
       </div>`;
   }
+  // QQQ 현재가 vs 200일선 비교 카드
+  function signalCard(sig) {
+    if (!sig) return '<div class="sec notice">QQQ 200일선 정보를 불러오지 못했습니다. 잠시 후 [↻ 시세 갱신]을 눌러 주세요.</div>';
+    const SRC = { GOOGLE: 'Google Finance', YAHOO: 'Yahoo Finance', NAVER: '네이버 금융' };
+    const zone = {
+      above: { cls: 'zone-above', text: '200일선 +1% 이상' },
+      below: { cls: 'zone-below', text: '200일선 −1% 이하' },
+      between: { cls: 'zone-between', text: '200일선 ±1% 사이 (기준 변경 없음 구간)' }
+    }[sig.zone];
+    const diff = sig.price - sig.sma;
+    return `
+      <div class="sec signal-grid">
+        <div class="card stat"><div class="stat-t">QQQ 최신 현재가</div>
+          <div class="stat-v">${Fmt.usd(sig.price)}</div>
+          <div class="stat-sub">${SRC[sig.priceSource] || sig.priceSource} · ${Fmt.mdhm(sig.priceAsOf)} 기준</div></div>
+        <div class="card stat"><div class="stat-t">QQQ ${sig.period}일선</div>
+          <div class="stat-v">${Fmt.usd(sig.sma)}</div>
+          <div class="stat-sub">최근 ${sig.period}거래일 종가 평균 · 마지막 종가 ${sig.smaDate} (미국) · ${SRC[sig.smaSource] || sig.smaSource}</div></div>
+        <div class="card stat"><div class="stat-t">현재가 − ${sig.period}일선</div>
+          <div class="stat-v"><span class="${Fmt.cls(sig.diffPct, 'PCT')}">${Fmt.pct(sig.diffPct)}</span></div>
+          <div class="stat-sub"><span class="${Fmt.cls(diff, 'USD')}">${Fmt.signedMoney(diff, 'USD')}</span> · +1% 선 ${Fmt.usd(sig.sma * 1.01)} / −1% 선 ${Fmt.usd(sig.sma * 0.99)}</div></div>
+        <div class="card stat ${zone.cls}"><div class="stat-t">현재 구간</div>
+          <div class="stat-v zone-text">${zone.text}</div>
+          <div class="stat-sub">${sig.zone === 'between' ? '±1% 사이에서는 직전 기준을 유지하는 것을 권장' : '아래 표에서 이 기준 행에 \'현재 해당\' 표시'}</div></div>
+      </div>`;
+  }
+
   App.init('invest', render);
 })();
