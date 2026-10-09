@@ -87,7 +87,14 @@ window.UI = (function () {
   // ---- 계좌 → 보유 종목 트리 (12-1항). 계좌 관리 화면과 XLSX 업로드 미리보기에서 사용 ----
   function holdingsTree(model, mode, opts = {}) {
     const { editable = false, filterGroup = 'ALL', sortBy = 'default', collapsed = new Set(), showUpdated = editable, linkGroups = true, byBroker = false } = opts;
-    // showUpdated: 종목명 아래 '최종 수정' 표시 / linkGroups: 자산군 클릭 시 자산군 현황으로 이동 / byBroker: 증권사별로 묶어 표시
+    // showUpdated: 종목명 아래 '최종 수정' 표시 / linkGroups: 자산군 클릭 시 자산군 현황으로 이동
+    // groupBy: 계좌를 묶는 기준 'broker'(증권사) · 'type'(계좌종류) · 'name'(계좌명) · 없음. byBroker: true = 'broker'
+    const groupBy = opts.groupBy || (byBroker ? 'broker' : null);
+    const GROUP_KEY = {
+      broker: a => a.broker || '(증권사 없음)',
+      type: a => (a.account && a.account.account_type) || '(계좌종류 없음)',
+      name: a => a.name
+    }[groupBy];
     const total = model.total.valK;
     const groupIdx = c => Groups.codes.indexOf(c);
     const match = x => filterGroup === 'ALL' || (filterGroup === 'UNASSIGNED' ? x.unassigned : (x.group === filterGroup && !x.unassigned) || (filterGroup === 'OTHER_STOCK' && x.unassigned));
@@ -103,15 +110,15 @@ window.UI = (function () {
     let body = '';
     let accounts = model.accounts;
     const brokerAgg = {};
-    if (byBroker) {
+    if (GROUP_KEY) {
       const order = [];
-      accounts.forEach(a => { const b = a.broker || '(증권사 없음)'; if (!brokerAgg[b]) { brokerAgg[b] = { agg: Calc.emptyAgg(), n: 0 }; order.push(b); } a.rows.forEach(x => Calc.add(brokerAgg[b].agg, x.r)); brokerAgg[b].n++; });
-      accounts = order.flatMap(b => accounts.filter(a => (a.broker || '(증권사 없음)') === b));
+      accounts.forEach(a => { const b = GROUP_KEY(a); if (!brokerAgg[b]) { brokerAgg[b] = { agg: Calc.emptyAgg(), n: 0 }; order.push(b); } a.rows.forEach(x => Calc.add(brokerAgg[b].agg, x.r)); brokerAgg[b].n++; });
+      accounts = order.flatMap(b => accounts.filter(a => GROUP_KEY(a) === b));
     }
     let lastBroker = null;
     accounts.forEach(acc => {
-      const bk = acc.broker || '(증권사 없음)';
-      if (byBroker && bk !== lastBroker) {
+      const bk = GROUP_KEY ? GROUP_KEY(acc) : null;
+      if (GROUP_KEY && bk !== lastBroker) {
         lastBroker = bk;
         const bv = Calc.view(brokerAgg[bk].agg, mode, model.fx);
         body += `<tr class="broker-row"><td colspan="7"><b>${esc(bk)}</b> <span class="muted">· ${brokerAgg[bk].n}개 계좌</span></td>
@@ -192,14 +199,20 @@ window.UI = (function () {
             <option value="group-desc" ${sortBy === 'group-desc' ? 'selected' : ''}>자산군 역순</option>
             <option value="value" ${sortBy === 'value' ? 'selected' : ''}>평가금액 큰 순</option>
           </select>
+          ${opts.groupSelect ? `<label class="small muted" for="f-groupby">묶기 기준</label>
+          <select id="f-groupby" class="inline">
+            ${[['broker', '증권사'], ['type', '계좌종류'], ['name', '계좌명']].map(([k, l]) => `<option value="${k}" ${st.groupBy === k ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>` : ''}
           ${opts.extraTools || ''}
         </div>
         <div class="toolbar"><button type="button" class="btn btn-sm" id="exp-all">모두 펼치기</button><button type="button" class="btn btn-sm" id="col-all">모두 접기</button></div>
       </div>
       ${filterGroup !== 'ALL' ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
-      ${holdingsTree(model, mode, { ...opts, filterGroup, sortBy, collapsed: st.collapsed })}`;
+      ${holdingsTree(model, mode, { ...opts, filterGroup, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}) })}`;
   }
   function bindTree(root, model, st) {
+    const gb = root.querySelector('#f-groupby');
+    if (gb) gb.onchange = e => { st.groupBy = e.target.value; if (st.onGroupBy) st.onGroupBy(st.groupBy); App.rerender(); };
     root.querySelector('#f-group').onchange = e => { st.filterGroup = e.target.value; App.rerender(); };
     root.querySelector('#f-sort').onchange = e => { st.sortBy = e.target.value; App.rerender(); };
     root.querySelector('#exp-all').onclick = () => { st.collapsed.clear(); App.rerender(); };
