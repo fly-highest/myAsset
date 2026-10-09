@@ -232,5 +232,11 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .tree td { font-size: 13px; }
 .tree .nm .upd { font-weight: 400; }
 .tree .acc-row .btn-ghost { margin-left: 4px; padding: 1px 7px; }
-.tree td.actions { white-space: normal; width: 1%; }
-.tree td.actions .btn { display: flex; width: 100%; justify-content: center; margin: 2px 0 !important; }
+
+/* 계좌 트리: 화면 높이에 맞춘 스크롤 영역 — 가로 스크롤바가 항상 화면 안에 보이도록 */
+.tree-wrap { max-height: calc(100vh - 90px); overflow: auto; }
+.modal .tree-wrap { max-height: 55vh; }
+.tree thead th { z-index: 3; }
+.tree tfoot td { position: sticky; bottom: 0; z-index: 2; }
+.tree td { padding-top: 5px; padding-bottom: 5px; }
+.tree .sub { line-height: 1.25; }

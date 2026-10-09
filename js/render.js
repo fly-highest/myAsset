@@ -132,7 +132,7 @@ window.UI = (function () {
     });
     if (!model.accounts.length) body = `<tr><td colspan="${cols}" class="muted center">계좌가 없습니다.</td></tr>`;
     const tv = Calc.view(model.total, mode, model.fx);
-    return `<div class="tbl-wrap"><table class="tbl tree">
+    return `<div class="tbl-wrap tree-wrap"><table class="tbl tree">
       <thead><tr>
         <th>종목명</th><th>심볼</th>
         <th>${editable ? `<button type="button" class="th-sort" data-sort-group title="자산군 순으로 정렬">자산군${sortMark}</button>` : '자산군'}</th>

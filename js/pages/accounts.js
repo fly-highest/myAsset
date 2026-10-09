@@ -73,12 +73,24 @@
     });
     main.querySelectorAll('[data-act]').forEach(b => b.onclick = () => onAction(b.dataset.act, b.dataset.id, model));
 
+    fitTree();
+
     if (pendingHash) {
       const row = main.querySelector(`[data-acc="${CSS.escape(pendingHash)}"]`);
       pendingHash = '';
       if (row) row.scrollIntoView({ block: 'center' });
     }
   }
+
+  // 표 높이를 '첫 화면의 남은 높이'에 맞춰, 아래로 스크롤하지 않아도 가로 스크롤바가 보이게 합니다.
+  function fitTree() {
+    const wrap = document.querySelector('#main .tree-wrap');
+    if (!wrap) return;
+    const top = wrap.getBoundingClientRect().top + window.scrollY;
+    const h = Math.max(360, window.innerHeight - top - 16);
+    wrap.style.maxHeight = h + 'px';
+  }
+  window.addEventListener('resize', fitTree);
 
   async function onAction(act, id, model) {
     const acc = model.accounts.find(a => a.id === id);
