@@ -4,6 +4,6 @@
 cd "$(dirname "$0")/.." || exit 1
 NEW="$1"; [ -n "$NEW" ] || { echo "새 버전을 입력하세요 (예: 20261010d)"; exit 1; }
 OLD=$(cat version.txt | tr -d '\r\n ')
-for h in index.html groups.html accounts.html history.html manage.html; do sed -i "s/?v=$OLD/?v=$NEW/g" "$h"; done
+for h in index.html groups.html accounts.html history.html manage.html login.html; do sed -i "s/?v=$OLD/?v=$NEW/g" "$h"; done
 printf "%s\n" "$NEW" > version.txt
 echo "$OLD -> $NEW"

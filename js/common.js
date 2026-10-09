@@ -41,7 +41,7 @@ window.App = (function () {
     if (pending) { pending = false; rerender(); }
   }
 
-  function header(pageKey) {
+  function header(pageKey, session) {
     const el = document.getElementById('app-header');
     el.innerHTML = `
       <div class="hdr-inner">
@@ -54,9 +54,12 @@ window.App = (function () {
             ${MODES.map(m => `<button type="button" data-mode="${m.code}" class="${m.code === app.mode ? 'on' : ''}">${m.label}</button>`).join('')}
           </div>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-mock" title="이 브라우저에 저장된 Mock 변경 내용을 지우고 처음 상태로 되돌립니다">Mock 초기화</button>
+          ${session ? `<span class="user-chip" title="로그인한 계정">${esc(Auth.toId(session.user.email))}</span><button type="button" class="btn btn-ghost btn-sm" id="btn-logout">로그아웃</button>` : ''}
         </div>
       </div>`;
     el.querySelector('#btn-refresh-prices').addEventListener('click', refreshPricesNow);
+    const lo = el.querySelector('#btn-logout');
+    if (lo) lo.addEventListener('click', async () => { if (await confirm('로그아웃할까요?', { okLabel: '로그아웃' })) Auth.signOut(); });
     el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
       app.mode = b.dataset.mode;
       el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === app.mode));
@@ -107,9 +110,11 @@ window.App = (function () {
     btn.textContent = label;
   }
 
-  function init(pageKey, fn) {
+  // 로그인 확인 후 화면을 그립니다 (로그인하지 않았으면 로그인 화면으로 이동)
+  async function init(pageKey, fn) {
     renderFn = fn;
-    header(pageKey);
+    const session = window.Auth ? await Auth.require() : null;
+    header(pageKey, session);
     DataService.onChange(rerender); // 저장 즉시 화면 재계산 (19-1항)
     rerender();
     // 외부 종목 목록 정기(월 1회) 갱신 — 갱신 시각이 지났으면 자동 최신화 (새 종목명 반영)
