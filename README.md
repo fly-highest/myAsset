@@ -6,7 +6,7 @@
 ## 실행 방법 (가장 쉬운 방법)
 
 1. 이 폴더의 `index.html` 파일을 **더블클릭**하면 브라우저에서 열립니다.
-2. 위쪽 메뉴로 4개 화면을 오갈 수 있습니다.
+2. 위쪽 메뉴로 5개 화면을 오갈 수 있습니다.
 
 | 화면 | 파일 | 하는 일 |
 |---|---|---|
@@ -28,7 +28,7 @@
 ## 폴더 구조
 
 ```
-index.html / groups.html / accounts.html / history.html   화면 4개
+index.html / groups.html / accounts.html / history.html / manage.html   화면 5개
 css/style.css            디자인
 js/config.js             자산군 7개 등 공통 설정
 js/format.js             숫자·날짜 표시 형식 (₩, $, %, 색상)
