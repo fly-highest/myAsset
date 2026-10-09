@@ -220,6 +220,50 @@ window.UI = (function () {
   }
   window.addEventListener('resize', fitTree);
 
+  // ---- 자산 현황 표 (이력 '날짜별 자산 현황'·자산군 현황 '현재 자산 현황' 공용) ----
+  // entries: [{ label: '2026-10-09', sub: '08:00', tag: '', model }]  (model = Calc.buildModel / buildSnapshotModel 결과)
+  // 총 평가·투자·손익·수익률·환율 + 자산군별 총액 7칸 → 자산군별 비중 7칸.
+  // 혼합 모드는 줄마다 원화 줄 + 달러 줄 (비중은 그 통화 자산 안에서)
+  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap' } = {}) {
+    const mixed = mode === 'MIXED';
+    const gcell = (i, html) => `<td class="num${i === 0 ? ' g-first' : ''}">${html}</td>`;
+    const labelCell = (e, span) => `<td class="nowrap sticky-col"${span ? ` rowspan="${span}"` : ''}>${esc(e.label)}${e.sub ? ` <span class="muted small">${esc(e.sub)}</span>` : ''}${e.tag ? ` <span class="tag">${esc(e.tag)}</span>` : ''}</td>`;
+    const rows = entries.map(e => {
+      const m = e.model;
+      if (!mixed) {
+        const v = Calc.view(m.total, mode, m.fx);
+        const amounts = Groups.list.map((g, i) => gcell(i, amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val'))).join('');
+        const weights = Groups.list.map((g, i) => gcell(i, Fmt.weight(w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
+        return `<tr>${labelCell(e)}
+          <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v, { split: false })}</td><td class="num">${ret(v)}</td>
+          <td class="num">${Fmt.fx(m.fx || 0)}</td>${amounts}${weights}</tr>`;
+      }
+      return [['KRW', '원화', 'kr'], ['USD', '달러', 'us']].map(([cur, label, k], idx) => {
+        const t = m.total[k], p = t.val - t.inv, r = Calc.pct(p, t.inv);
+        const has = a => (k === 'kr' ? a.nKR : a.nUS);
+        const amounts = Groups.list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.money(a[k].val, cur) : '<span class="muted">—</span>'); }).join('');
+        const weights = Groups.list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.weight(w(a[k].val, t.val)) : '<span class="muted">—</span>'); }).join('');
+        return `<tr class="${idx === 0 ? 'pair-top' : 'pair-bottom'}">${idx === 0 ? labelCell(e, 2) : ''}
+          <td class="cur-col">${label}</td>
+          <td class="num">${Fmt.money(t.val, cur)}</td><td class="num">${Fmt.money(t.inv, cur)}</td>
+          <td class="num ${Fmt.cls(p, cur)}">${Fmt.signedMoney(p, cur)}</td><td class="num ${Fmt.cls(r, 'PCT')}">${Fmt.pct(r)}</td>
+          ${idx === 0 ? `<td class="num" rowspan="2">${Fmt.fx(m.fx || 0)}</td>` : ''}${amounts}${weights}</tr>`;
+      }).join('');
+    }).join('');
+    return `<div class="tbl-wrap ${wrapClass}"><table class="tbl hist">
+      <thead>
+        <tr>
+          <th rowspan="2" class="sticky-col">${firstHeader}</th>${mixed ? '<th rowspan="2">통화</th>' : ''}<th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
+          <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
+          <th colspan="${Groups.list.length}" class="center g-first">자산군별 총액</th>
+          <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
+        </tr>
+        <tr>${[0, 1].map(() => Groups.list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
+      </thead>
+      <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + Groups.list.length * 2}" class="muted">${empty}</td></tr>`}</tbody>
+    </table></div>`;
+  }
+
   // ---- 화면 데이터를 xlsx 로 내려받기 (SheetJS) ----
   // sheets: [{ name, rows: [[...], ...] (첫 줄 = 제목), widths: [열 너비], formats: { 열번호: '#,##0' } }]
   // 숫자는 숫자 그대로 저장 → 엑셀에서 바로 계산 가능
@@ -338,5 +382,5 @@ window.UI = (function () {
     });
   }
 
-  return { amt, prof, ret, weight, w, priceCell, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
+  return { amt, prof, ret, weight, w, priceCell, statusTable, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
 })();

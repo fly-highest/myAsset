@@ -306,3 +306,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .login-brand { font-size: 26px; }
 .login-btn { justify-content: center; padding: 10px; font-size: 15px; margin-top: 4px; }
 .login-foot { margin: 6px 0 0; text-align: center; }
+.now-wrap { overflow-x: auto; }

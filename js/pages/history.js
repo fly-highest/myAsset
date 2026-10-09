@@ -21,38 +21,8 @@
     lastView = { snaps, models, mode, fromVal: snaps[0] ? snaps[0].snapshot_date : '', toVal: snaps.length ? snaps[snaps.length - 1].snapshot_date : '' };
     const last = snaps[snaps.length - 1];
 
-    // 날짜별 자산 현황 표: 총합 + 자산군별 총액·비중 (최근 날짜가 위)
-    const mixed = mode === 'MIXED';
-    const gcell = (i, html) => `<td class="num${i === 0 ? ' g-first' : ''}">${html}</td>`;
-    const dateCell = (s, span) => `<td class="nowrap sticky-col"${span ? ` rowspan="${span}"` : ''}>${s.snapshot_date} <span class="muted small">${s.snapshot_time}</span>${s.simulated ? ' <span class="tag">시뮬레이션</span>' : ''}</td>`;
-    const rows = snaps.map((s, i) => ({ s, m: models[i] })).reverse().map(({ s, m }) => {
-      if (!mixed) {
-        // 원화환산·달러환산: 날짜당 1줄. 자산군별 총액 7칸 → 자산군별 비중 7칸 (비중은 원화 환산 기준)
-        const v = Calc.view(m.total, mode, m.fx);
-        const amounts = Groups.list.map((g, i) => gcell(i, UI.amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val'))).join('');
-        const weights = Groups.list.map((g, i) => gcell(i, Fmt.weight(UI.w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
-        return `<tr>${dateCell(s)}
-          <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v, { split: false })}</td><td class="num">${UI.ret(v)}</td>
-          <td class="num">${Fmt.fx(m.fx || 0)}</td>${amounts}${weights}</tr>`;
-      }
-      // 혼합 모드: 날짜당 원화 줄 + 달러 줄. 원화 = 원화 자산만(₩), 달러 = 달러 자산만($). 비중은 그 통화 자산 안에서.
-      return [['KRW', '원화', 'kr'], ['USD', '달러', 'us']].map(([cur, label, k], idx) => {
-        const t = m.total[k], prof = t.val - t.inv, ret = Calc.pct(prof, t.inv);
-        const amounts = Groups.list.map((g, i) => {
-          const a = m.groups[g.code].agg;
-          return gcell(i, (k === 'kr' ? a.nKR : a.nUS) ? Fmt.money(a[k].val, cur) : '<span class="muted">—</span>');
-        }).join('');
-        const weights = Groups.list.map((g, i) => {
-          const a = m.groups[g.code].agg;
-          return gcell(i, (k === 'kr' ? a.nKR : a.nUS) ? Fmt.weight(UI.w(a[k].val, t.val)) : '<span class="muted">—</span>');
-        }).join('');
-        return `<tr class="${idx === 0 ? 'pair-top' : 'pair-bottom'}">${idx === 0 ? dateCell(s, 2) : ''}
-          <td class="cur-col">${label}</td>
-          <td class="num">${Fmt.money(t.val, cur)}</td><td class="num">${Fmt.money(t.inv, cur)}</td>
-          <td class="num ${Fmt.cls(prof, cur)}">${Fmt.signedMoney(prof, cur)}</td><td class="num ${Fmt.cls(ret, 'PCT')}">${Fmt.pct(ret)}</td>
-          ${idx === 0 ? `<td class="num" rowspan="2">${Fmt.fx(m.fx || 0)}</td>` : ''}${amounts}${weights}</tr>`;
-      }).join('');
-    }).join('');
+    // 날짜별 자산 현황 표 (최근 날짜가 위) — 자산군 현황 화면과 같은 양식 (UI.statusTable)
+    const table = UI.statusTable(snaps.map((s, i) => ({ label: s.snapshot_date, sub: s.snapshot_time, tag: s.simulated ? '시뮬레이션' : '', model: models[i] })).reverse(), mode, { empty: '스냅샷이 없습니다' });
 
     document.getElementById('main').innerHTML = `
       <div class="page-hd">
@@ -77,18 +47,7 @@
       </div>
       <div class="sec">
         <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 보이는 기간·통화 기준으로 표를 엑셀 파일로 내려받습니다">엑셀 다운로드</button></div></div>
-        <div class="tbl-wrap hist-wrap"><table class="tbl hist">
-          <thead>
-            <tr>
-              <th rowspan="2" class="sticky-col">날짜</th>${mixed ? '<th rowspan="2">통화</th>' : ''}<th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
-              <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
-              <th colspan="${Groups.list.length}" class="center g-first">자산군별 총액</th>
-              <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
-            </tr>
-            <tr>${[0, 1].map(() => Groups.list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
-          </thead>
-          <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + Groups.list.length * 2}" class="muted">스냅샷이 없습니다</td></tr>`}</tbody>
-        </table></div>
+        ${table}
       </div>`;
 
     const main = document.getElementById('main');

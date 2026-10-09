@@ -6,6 +6,7 @@
 
   async function render() {
     const { model, status } = await App.loadCurrentModel();
+    const ps = await DataService.getPriceStatus();
     const mode = App.mode;
     const total = model.total.valK;
     const accName = Object.fromEntries(model.accounts.map(a => [a.key, a.name]));
@@ -69,6 +70,10 @@
       </div>
       ${App.statusBar(status, { showSnapshot: false })}
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
+      <div class="sec">
+        <div class="sec-hd"><h2>현재 자산 현황</h2><span class="small muted">이력의 날짜별 자산 현황과 같은 양식 · 현재 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span></div>
+        ${UI.statusTable([{ label: '현재', sub: ps.latestAsOf ? `시세 ${Fmt.mdhm(ps.latestAsOf)}` : '예시 시세', model }], mode, { firstHeader: '기준', wrapClass: 'now-wrap' })}
+      </div>
       <div class="sec">
         <div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>자산군 / 종목 / 계좌</th><th class="num">수량</th><th class="num">평균매입가</th><th class="num">현재가</th>
