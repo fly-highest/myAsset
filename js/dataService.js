@@ -768,12 +768,13 @@ window.DataService = (function () {
   const AUTO_COLS = { '종목명': 2, '거래소': 3, '자산유형': 4, '통화': 5 }; // 심볼로 자동 입력되는 칸 → 종목목록 시트의 열 번호
   const EXTRA_ROWS = 200; // 내려받은 파일에 새 종목을 적을 수 있도록 미리 준비하는 빈 줄 수
   // 내려받는 엑셀 머리글에 붙는 도움말 (셀에 마우스를 올리면 보임)
+  const JUNK_SYMBOL = '999999'; // 잡주: 자잘한 국내 주식을 한 줄로 묶은 종목 (수량 1, 현재가는 직접 입력)
   const HEADER_NOTES = {
     '증권사': '목록에서 고릅니다 (선택목록 시트 = 증권 마스터).',
     '계좌종류': '목록에서 고릅니다. 비우면 같은 이름 계좌의 기존 값을 유지합니다.',
     '심볼': '종목코드를 입력하면 종목명·거래소·자산유형·통화가 자동으로 채워집니다 (종목목록 시트 참고).',
-    '수량': '0보다 큰 숫자. 현금은 금액을 수량에 적습니다.',
-    '평균매입가': '원본통화 기준 평균단가.\n현금은 1 (다른 값을 적어도 업로드 시 경고 후 1로 바꿔 반영).',
+    '수량': '0보다 큰 숫자. 현금은 금액을 수량에 적습니다.\n잡주(999999)는 1만 입력할 수 있습니다.',
+    '평균매입가': '원본통화 기준 평균단가.\n현금은 1만 입력할 수 있습니다.',
     '매입평균환율': 'USD 종목: 달러를 산 평균환율 (필수, 0보다 큼).\nKRW 종목: 비우거나 1 (다른 값을 적어도 업로드 시 경고 후 1로 바꿔 반영).'
   };
   const pad = n => String(n).padStart(2, '0');
@@ -928,6 +929,7 @@ window.DataService = (function () {
       };
       const q = cleanNum(raw['수량']);
       numCheck('수량', q, v => v > 0, '수량은 0보다 커야 합니다');
+      if (ref && ref.exchange === 'KRX' && ref.symbol === JUNK_SYMBOL && q !== null && !isNaN(q) && q !== 1) err('수량', '잡주(999999)의 수량은 1만 입력할 수 있습니다', '1');
       const ap = cleanNum(raw['평균매입가']);
       if (!isCash) numCheck('평균매입가', ap, v => v >= 0, '평균매입가는 0 이상이어야 합니다');
       if (isCash && ap !== null && ap !== 1) warn('평균매입가', '현금 행의 평균매입가는 1로 바꿔서 반영합니다');
@@ -1096,6 +1098,10 @@ window.DataService = (function () {
       const q = data[col('수량') - 1], cur = data[col('통화') - 1];
       row.getCell(col('수량')).numFmt = q % 1 ? NUM_FRAC : '#,##0';
       row.getCell(col('평균매입가')).numFmt = cur === 'USD' ? '#,##0.00' : '#,##0';
+      // 입력 제한: 잡주는 수량 1, 현금(자산유형 CASH)은 평균매입가 1
+      const cell = h => colLetter(col(h)) + r;
+      row.getCell(col('수량')).dataValidation = { type: 'custom', allowBlank: true, formulae: [`OR(AND($${cell('종목명')}<>"잡주",$${cell('심볼')}<>"${JUNK_SYMBOL}"),${cell('수량')}=1)`], showErrorMessage: true, errorTitle: '수량', error: '잡주(999999)의 수량은 1만 입력할 수 있습니다.' };
+      row.getCell(col('평균매입가')).dataValidation = { type: 'custom', allowBlank: true, formulae: [`OR($${cell('자산유형')}<>"CASH",${cell('평균매입가')}=1)`], showErrorMessage: true, errorTitle: '평균매입가', error: '현금의 평균매입가는 1만 입력할 수 있습니다.' };
       row.getCell(col('증권사')).dataValidation = { type: 'list', allowBlank: true, formulae: [`'선택목록'!$A$2:$A$${brokers.length + 1}`], showErrorMessage: true, errorTitle: '증권사', error: '목록에서 선택해 주세요 (선택목록 시트 = 증권 마스터)' };
       row.getCell(col('계좌종류')).dataValidation = { type: 'list', allowBlank: true, formulae: [`'선택목록'!$B$2:$B$${types.length + 1}`], showErrorMessage: true, errorTitle: '계좌종류', error: '목록에서 선택해 주세요 (선택목록 시트 = 증권 마스터)' };
     }
