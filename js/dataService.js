@@ -417,11 +417,15 @@ window.DataService = (function () {
   }
 
   // ---------------------------------------------------------------
-  // XLSX 업로드 / 다운로드 (SheetJS, 브라우저에서만 처리 — 서버 전송 없음)
+  // XLSX 업로드 / 다운로드 (브라우저에서만 처리 — 서버 전송 없음)
+  // - 읽기: SheetJS
+  // - 내려받기: ExcelJS — 증권사·계좌종류 드롭다운, 심볼을 치면 종목명·거래소·자산유형·통화 자동 입력(수식)
+  // - 업로드 점검: 심볼·종목 정보·증권사·계좌종류가 DB 와 하나라도 다르면 오류 → 반영하지 않음
   // ---------------------------------------------------------------
-  const HEADERS = MOCK.xlsxSamples.headers;
-  const OPTIONAL_HEADERS = ['자산유형', '자산군', '계좌종류', '비고'];
-  const REQUIRED_HEADERS = HEADERS.filter(h => !OPTIONAL_HEADERS.includes(h));
+  const HEADERS = MOCK.xlsxSamples.headers; // 계좌명, 증권사, 계좌종류, 심볼, 종목명, 거래소, 자산유형, 통화, 수량, 평균매입가, 매입평균환율, 비고
+  const REQUIRED_HEADERS = ['계좌명', '증권사', '심볼', '수량', '평균매입가', '매입평균환율'];
+  const AUTO_COLS = { '종목명': 2, '거래소': 3, '자산유형': 4, '통화': 5 }; // 심볼로 자동 입력되는 칸 → 종목목록 시트의 열 번호
+  const EXTRA_ROWS = 200; // 내려받은 파일에 새 종목을 적을 수 있도록 미리 준비하는 빈 줄 수
   const pad = n => String(n).padStart(2, '0');
 
   function cleanNum(v) {
@@ -443,9 +447,20 @@ window.DataService = (function () {
     return isNaN(d) || d.toISOString().slice(0, 10) !== s ? null : s;
   }
 
+  // DB 기준 종목 정보 = 등록된 종목 + 외부 종목 목록 (심볼+거래소 기준 중복 제거)
+  function symbolRefs() {
+    const map = new Map();
+    state.instruments.forEach(i => map.set(catalogKey(i), { id: i.id, symbol: i.symbol, exchange: i.exchange, name: i.name, asset_type: i.asset_type, currency: i.currency }));
+    MOCK.catalog.items.forEach(c => {
+      const k = catalogKey(c);
+      if (!map.has(k)) map.set(k, { id: null, symbol: c.symbol, exchange: c.exchange, name: c.name, asset_type: c.asset_type, currency: c.currency, eng_name: c.eng_name });
+    });
+    return [...map.values()];
+  }
+
   async function parseHoldingsXlsx(file) {
     const res = { fileName: file.name, baseDate: null, rows: [], fileErrors: [] };
-    const E = (col, value, reason) => res.fileErrors.push({ row: '-', col, value: String(value ?? ''), reason });
+    const E = (col, value, reason) => res.fileErrors.push({ row: '-', col, value: String(value ?? ''), expected: '', reason });
     if (!/\.xlsx$/i.test(file.name)) { E('파일', file.name, '확장자가 .xlsx 가 아닙니다'); return res; }
     if (file.size > 5 * 1024 * 1024) { E('파일', file.name, '파일 크기가 5MB를 초과합니다'); return res; }
     let wb;
@@ -466,14 +481,15 @@ window.DataService = (function () {
     const ws = wb.Sheets['보유'];
     if (!ws) { E('보유', '', '보유 시트가 없습니다'); return res; }
     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
-    const header = (aoa[0] || []).map(h => String(h).trim());
+    const header = (aoa[0] || []).map(h => String(h).replace(/\(자동\)/, '').trim());
     const missing = REQUIRED_HEADERS.filter(h => !header.includes(h));
     if (missing.length) { E('헤더', missing.join(', '), '필수 헤더 누락'); return res; }
     for (let i = 1; i < aoa.length; i++) {
       const line = aoa[i] || [];
-      if (line.every(v => String(v).trim() === '')) continue;
       const raw = {};
       HEADERS.forEach(h => { const idx = header.indexOf(h); raw[h] = idx >= 0 ? line[idx] : ''; });
+      // 사용자가 입력하는 칸이 모두 비어 있으면 빈 줄 (자동 입력 칸은 수식이라 무시)
+      if (HEADERS.filter(h => !(h in AUTO_COLS)).every(h => String(raw[h] ?? '').trim() === '')) continue;
       res.rows.push({ rowNo: i + 1, raw });
     }
     if (!res.rows.length) E('보유', '', '데이터 행이 0건입니다');
@@ -482,7 +498,7 @@ window.DataService = (function () {
 
   async function validateImport(parsed) {
     const errors = [...parsed.fileErrors], warnings = [];
-    const add = (list, row, col, value, reason) => list.push({ row, col, value: String(value ?? ''), reason });
+    const add = (list, row, col, value, reason, expected) => list.push({ row, col, value: String(value ?? ''), expected: String(expected ?? ''), reason });
     const today = Fmt.todayKST();
     if (parsed.baseDate) {
       if (parsed.baseDate > today) add(errors, '-', '기준일자', parsed.baseDate, '기준일자가 오늘(KST) 이후입니다');
@@ -491,18 +507,65 @@ window.DataService = (function () {
         if (parsed.baseDate < state.meta.baseDate) add(warnings, '-', '기준일자', parsed.baseDate, `기준일자가 현재 현황의 기준일(${state.meta.baseDate})보다 이전입니다`);
       }
     }
-    const instByKey = Object.fromEntries(state.instruments.map(i => [instKey(i.symbol, i.exchange), i]));
-    const rows = [], seen = {}, brokerByAcc = {}, newSeen = {};
+    const refs = symbolRefs();
+    const brokerNames = state.brokers.map(b => b.name), typeNames = state.accountTypes.map(t => t.name);
+    const rows = [], seen = {}, accInfo = {}, newSeen = {};
 
     parsed.rows.forEach(({ rowNo, raw }) => {
       const s = h => String(raw[h] ?? '').trim();
-      const err = (col, reason, value) => add(errors, rowNo, col, value !== undefined ? value : raw[col], reason);
+      const err = (col, reason, expected, value) => add(errors, rowNo, col, value !== undefined ? value : raw[col], reason, expected);
       const warn = (col, reason, value) => add(warnings, rowNo, col, value !== undefined ? value : raw[col], reason);
 
-      ['계좌명', '증권사', '종목명', '심볼', '거래소', '통화'].forEach(h => { if (!s(h)) err(h, '필수 값이 비어 있습니다'); });
-      const currency = s('통화').toUpperCase();
-      if (currency && !APP_CONFIG.CURRENCIES.includes(currency)) err('통화', '통화는 KRW 또는 USD만 가능합니다');
+      // 1) 계좌: 증권사·계좌종류는 증권 마스터(DB)에 있는 값만
+      const acc = s('계좌명'), broker = s('증권사'), accType = s('계좌종류'), memo = s('비고');
+      if (!acc) err('계좌명', '필수 값이 비어 있습니다');
+      if (!broker) err('증권사', '필수 값이 비어 있습니다');
+      else if (!brokerNames.includes(broker)) err('증권사', 'DB(증권 마스터)에 없는 증권사입니다', brokerNames.join(', '));
+      if (accType && !typeNames.includes(accType)) err('계좌종류', 'DB(증권 마스터)에 없는 계좌종류입니다', typeNames.join(', '));
+      if (acc && broker) {
+        const a = accInfo[acc];
+        if (!a) accInfo[acc] = { broker, accType, row: rowNo };
+        else {
+          if (a.broker !== broker) err('증권사', `같은 계좌명(${acc})에 증권사가 다릅니다`, `${a.row}행: ${a.broker}`);
+          if (accType && a.accType && a.accType !== accType) err('계좌종류', `같은 계좌명(${acc})에 계좌종류가 다릅니다`, `${a.row}행: ${a.accType}`);
+          if (!a.accType && accType) a.accType = accType;
+        }
+      }
 
+      // 2) 종목: 심볼(+거래소)로 DB 종목을 찾고, 종목명·거래소·자산유형·통화가 DB 와 같은지 확인
+      let symbol = s('심볼').toUpperCase();
+      const exIn = s('거래소').toUpperCase();
+      if (/^\d{1,5}$/.test(symbol) && (!exIn || exIn === 'KRX')) symbol = symbol.padStart(6, '0'); // 엑셀이 005930 → 5930 으로 바꾼 경우
+      let ref = null;
+      if (!symbol) err('심볼', '필수 값이 비어 있습니다');
+      else {
+        const cands = refs.filter(r => r.symbol.toUpperCase() === symbol);
+        const hit = exIn ? cands.filter(r => r.exchange === exIn) : cands;
+        if (!cands.length) err('심볼', 'DB(종목 마스터·외부 종목 목록)에 없는 심볼입니다', '종목목록 시트 참고', symbol);
+        else if (!hit.length) err('거래소', '이 심볼의 거래소가 DB와 다릅니다', cands.map(r => r.exchange).join(', '));
+        else if (hit.length > 1) err('거래소', '같은 심볼이 여러 거래소에 있습니다. 거래소를 입력해 주세요', hit.map(r => r.exchange).join(', '));
+        else ref = hit[0];
+      }
+      if (ref) {
+        // 비어 있으면 DB 값을 쓰고, 값이 있는데 DB 와 다르면 오류
+        [['종목명', 'name', false], ['자산유형', 'asset_type', true], ['통화', 'currency', true]].forEach(([col, f, upper]) => {
+          let v = s(col);
+          if (!v || v === '(목록에 없음)') return;
+          if (upper) v = v.toUpperCase();
+          if (v !== ref[f]) err(col, 'DB 값과 다릅니다', ref[f]);
+        });
+        const k = catalogKey(ref);
+        if (!ref.id && !newSeen[k]) { newSeen[k] = true; warn('심볼', '외부 종목 목록에 있는 종목이라 종목 마스터에 새로 등록됩니다', `${ref.symbol}/${ref.exchange} ${ref.name}`); }
+        if (acc) {
+          const dk = acc + '|' + k;
+          if (seen[dk]) err('심볼', `같은 계좌에 같은 종목이 중복됩니다 (${seen[dk]}행과 중복)`, '', `${ref.symbol}/${ref.exchange}`);
+          else seen[dk] = rowNo;
+        }
+      }
+
+      // 3) 숫자: 수량·평균매입가·매입평균환율 (통화·현금 여부는 DB 종목 기준)
+      const currency = ref ? ref.currency : '';
+      const isCash = ref ? ref.asset_type === 'CASH' : false;
       const numCheck = (col, v, rule, ruleMsg) => {
         if (v === null) err(col, '필수 값이 비어 있습니다');
         else if (isNaN(v)) err(col, '숫자가 아닙니다');
@@ -512,69 +575,22 @@ window.DataService = (function () {
       numCheck('수량', q, v => v > 0, '수량은 0보다 커야 합니다');
       const ap = cleanNum(raw['평균매입가']);
       numCheck('평균매입가', ap, v => v >= 0, '평균매입가는 0 이상이어야 합니다');
+      if (isCash && ap !== null && !isNaN(ap) && ap !== 1) err('평균매입가', '현금 행의 평균매입가는 1이어야 합니다', '1');
       const fxv = cleanNum(raw['매입평균환율']);
       if (currency === 'USD') {
         if (fxv === null) err('매입평균환율', 'USD 종목은 매입평균환율이 필요합니다');
         else if (isNaN(fxv)) err('매입평균환율', '숫자가 아닙니다');
         else if (fxv <= 0) err('매입평균환율', '매입평균환율은 0보다 커야 합니다');
       } else if (currency === 'KRW' && fxv !== null && fxv !== 1) {
-        err('매입평균환율', 'KRW 종목의 매입평균환율은 비우거나 1이어야 합니다');
+        err('매입평균환율', 'KRW 종목의 매입평균환율은 비우거나 1이어야 합니다', '비움 또는 1');
       }
 
-      let symbol = s('심볼').toUpperCase();
-      const exchange = s('거래소').toUpperCase();
-      if (exchange === 'KRX' && /^\d{1,5}$/.test(symbol)) symbol = symbol.padStart(6, '0'); // 엑셀이 005930 → 5930 으로 바꾼 경우
-      const key = instKey(symbol, exchange);
-      const existing = instByKey[key];
-      let assetType = s('자산유형').toUpperCase();
-      const groupRaw = s('자산군');
-      let group = null;
-      if (groupRaw) {
-        const g = Groups.parse(groupRaw);
-        if (g === undefined) err('자산군', '7개 자산군에 없는 값입니다');
-        else group = g;
-      }
-      const isCash = existing ? existing.asset_type === 'CASH' : assetType === 'CASH' || exchange === 'CASH';
-      if (isCash && ap !== null && !isNaN(ap) && ap !== 1) err('평균매입가', '현금 행의 평균매입가는 1이어야 합니다');
-
-      if (existing) {
-        if (currency && APP_CONFIG.CURRENCIES.includes(currency) && existing.currency !== currency) err('통화', `종목 마스터의 통화(${existing.currency})와 다릅니다`);
-        if (groupRaw && group && group !== existing.asset_group)
-          warn('자산군', `기존 종목은 현재 매핑(${existing.asset_group ? Groups.name(existing.asset_group) : '미지정'})을 유지합니다 — 입력값 무시`);
-        if (s('종목명') && s('종목명') !== existing.name) warn('종목명', `종목 마스터 이름(${existing.name})과 다릅니다 — 마스터 이름 사용`);
-      } else if (symbol && exchange) {
-        const cat = catalogFind(symbol, exchange);
-        if (!assetType && cat) assetType = cat.asset_type; // 외부 종목 목록에 있으면 자산유형을 채움
-        if (!assetType) err('자산유형', '신규 종목은 자산유형이 필요합니다');
-        else if (!APP_CONFIG.ASSET_TYPES.includes(assetType)) err('자산유형', 'ETF, STOCK, CRYPTO, GOLD, CASH 중 하나여야 합니다');
-        if (!newSeen[key]) {
-          newSeen[key] = true;
-          warn('심볼', cat ? '외부 종목 목록에서 찾아 새로 등록됩니다' : '종목 마스터·외부 종목 목록에 없어 새로 등록됩니다', `${symbol}/${exchange}`);
-          if (!groupRaw) warn('자산군', '자산군이 비어 있어 기타종목(미지정)으로 집계됩니다', '');
-        }
-      }
-
-      const acc = s('계좌명'), broker = s('증권사'), accType = s('계좌종류'), memo = s('비고');
-      if (broker && !state.brokers.some(b => b.name === broker)) err('증권사', '증권 마스터에 없는 증권사입니다 (계좌 관리 › 증권 마스터 수정에서 먼저 등록)');
-      if (accType && !state.accountTypes.some(t => t.name === accType)) err('계좌종류', '증권 마스터에 없는 계좌종류입니다 (계좌 관리 › 증권 마스터 수정에서 먼저 등록)');
-      if (acc && broker) {
-        const b = brokerByAcc[acc];
-        if (b && b.broker !== broker) err('증권사', `같은 계좌명(${acc})에 증권사가 다릅니다 (${b.row}행: ${b.broker})`);
-        else if (b && accType && b.accType && b.accType !== accType) err('계좌종류', `같은 계좌명(${acc})에 계좌종류가 다릅니다 (${b.row}행: ${b.accType})`);
-        else if (!b) brokerByAcc[acc] = { broker, accType, row: rowNo };
-        else if (!b.accType && accType) b.accType = accType;
-      }
-      if (acc && symbol && exchange) {
-        const dk = acc + '|' + key;
-        if (seen[dk]) err('심볼', `같은 계좌에 같은 종목이 중복됩니다 (${seen[dk]}행과 중복)`, `${symbol}/${exchange}`);
-        else seen[dk] = rowNo;
-      }
       rows.push({
-        rowNo, account: acc, broker, accType, memo, name: s('종목명'), symbol, exchange,
-        asset_type: existing ? existing.asset_type : assetType,
-        currency: existing ? existing.currency : currency,
+        rowNo, account: acc, broker, accType, memo,
+        symbol: ref ? ref.symbol : symbol, exchange: ref ? ref.exchange : exIn, name: ref ? ref.name : s('종목명'),
+        asset_type: ref ? ref.asset_type : '', currency,
         quantity: q, avg_price: isCash ? 1 : ap, avg_fx_rate: currency === 'USD' ? fxv : 1,
-        group, existingId: existing ? existing.id : null
+        existingId: ref ? ref.id : null
       });
     });
     return { fileName: parsed.fileName, baseDate: parsed.baseDate, errors, warnings, rows };
@@ -588,8 +604,9 @@ window.DataService = (function () {
     v.rows.forEach(r => {
       const k = instKey(r.symbol, r.exchange);
       let inst = byKey[k];
-      if (!inst) {
-        inst = { id: uid('ins'), user_id: USER, name: r.name, eng_name: '', symbol: r.symbol, exchange: r.exchange, asset_type: r.asset_type, currency: r.currency, asset_group: r.group, created_at: now, updated_at: now };
+      if (!inst) { // 외부 종목 목록에 있는 종목 → 종목 마스터에 등록 (자산군은 미지정)
+        const cat = catalogFind(r.symbol, r.exchange) || {};
+        inst = { id: uid('ins'), user_id: USER, name: r.name, eng_name: cat.eng_name || '', symbol: r.symbol, exchange: r.exchange, asset_type: r.asset_type, currency: r.currency, asset_group: null, created_at: now, updated_at: now };
         instruments.push(inst);
         byKey[k] = inst;
       }
@@ -624,9 +641,9 @@ window.DataService = (function () {
     const accounts = s.accounts.map(withNames); // 미리보기 표에 증권사·계좌종류 이름 표시
     return { ...s, accounts, baseDate: v.baseDate, fx, model: Calc.buildModel({ ...s, accounts, prices, fx }) };
   }
-  // 현재 계좌·보유 전체를 파일 내용으로 교체 (전부 반영 또는 전부 취소)
+  // 현재 계좌·보유 전체를 파일 내용으로 교체 (전부 반영 또는 전부 취소). 오류가 1건이라도 있으면 반영하지 않음
   async function replaceCurrentHoldings(v) {
-    if (!v || v.errors.length) throw fail('오류가 있어 반영할 수 없습니다.');
+    if (!v || v.errors.length) throw fail('DB 정보와 다른 값이 있어 반영할 수 없습니다.');
     const next = buildImportState(v); // 실패하면 여기서 중단 → 현재 데이터는 그대로
     const backup = clone({ accounts: state.accounts, holdings: state.holdings, instruments: state.instruments, meta: { ...state.meta, importBackup: null } });
     state.accounts = next.accounts;
@@ -649,51 +666,128 @@ window.DataService = (function () {
     commit();
   }
 
-  function buildWorkbook(baseDate, rows) {
-    const wb = XLSX.utils.book_new();
-    const info = XLSX.utils.aoa_to_sheet([['기준일자', baseDate], ['안내', '업로드할 현황의 기준일입니다 (YYYY-MM-DD). 직접 바꿀 수 있습니다.']]);
-    info['B1'] = { t: 's', v: baseDate };
-    info['!cols'] = [{ wch: 12 }, { wch: 60 }];
-    const hs = XLSX.utils.aoa_to_sheet([HEADERS, ...rows]);
-    hs['!cols'] = [14, 12, 28, 12, 9, 9, 6, 14, 14, 12, 10, 12, 30].map(w => ({ wch: w }));
-    const guide = XLSX.utils.aoa_to_sheet(MOCK.xlsxSamples.guide);
-    guide['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 90 }];
-    XLSX.utils.book_append_sheet(wb, info, '기준정보');
-    XLSX.utils.book_append_sheet(wb, hs, '보유');
-    XLSX.utils.book_append_sheet(wb, guide, '작성안내');
-    return wb;
-  }
+  // 현재 계좌·보유 → 엑셀 행 (HEADERS 순서)
   function currentRows() {
     const instMap = Object.fromEntries(state.instruments.map(i => [i.id, i]));
     const rows = [];
     state.accounts.forEach(acc => {
       state.holdings.filter(h => h.account_id === acc.id).forEach(h => {
         const inst = instMap[h.instrument_id];
-        rows.push([acc.name, brokerName(acc.broker_id), inst.name, inst.symbol, inst.exchange, inst.asset_type, inst.currency,
-          h.quantity, h.avg_price, inst.currency === 'USD' ? h.avg_fx_rate : '', inst.asset_group ? Groups.name(inst.asset_group) : '',
-          typeName(acc.account_type_id), acc.memo || '']);
+        rows.push([acc.name, brokerName(acc.broker_id), typeName(acc.account_type_id), inst.symbol, inst.name, inst.exchange, inst.asset_type, inst.currency,
+          h.quantity, h.avg_price, inst.currency === 'USD' ? h.avg_fx_rate : '', acc.memo || '']);
       });
     });
     return rows;
   }
+
+  // 단순 값만 담은 통합문서 (SheetJS) — 자체 점검용
+  function buildWorkbook(baseDate, rows) {
+    const wb = XLSX.utils.book_new();
+    const info = XLSX.utils.aoa_to_sheet([['기준일자', baseDate]]);
+    info['B1'] = { t: 's', v: baseDate };
+    XLSX.utils.book_append_sheet(wb, info, '기준정보');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, ...rows]), '보유');
+    return wb;
+  }
+
+  // 내려받는 엑셀 (ExcelJS): 증권사·계좌종류 드롭다운 + 심볼 → 종목 정보 자동 입력
+  const colLetter = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  async function buildExcelBuffer(baseDate, rows) {
+    if (!window.ExcelJS) throw fail('엑셀 라이브러리(ExcelJS)를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
+    const wb = new ExcelJS.Workbook();
+    const headFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EEF9' } };
+    const autoFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F2F4' } };
+    const bold = { bold: true };
+
+    // 기준정보
+    const info = wb.addWorksheet('기준정보');
+    info.getCell('A1').value = '기준일자';
+    info.getCell('B1').numFmt = '@';
+    info.getCell('B1').value = baseDate;
+    info.getCell('A2').value = '안내';
+    info.getCell('B2').value = '업로드할 현황의 기준일입니다 (YYYY-MM-DD). 직접 바꿀 수 있습니다.';
+    info.getColumn(1).width = 12; info.getColumn(2).width = 64;
+    info.getCell('A1').font = bold;
+
+    // 보유
+    const ws = wb.addWorksheet('보유', { views: [{ state: 'frozen', ySplit: 1 }] });
+    const col = h => HEADERS.indexOf(h) + 1;
+    const head = ws.getRow(1);
+    HEADERS.forEach((h, j) => {
+      const c = head.getCell(j + 1);
+      c.value = h in AUTO_COLS ? `${h}(자동)` : h;
+      c.font = bold;
+      c.fill = h in AUTO_COLS ? autoFill : headFill;
+    });
+    [14, 13, 12, 12, 30, 9, 9, 7, 14, 14, 13, 34].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
+    const brokers = bySort(state.brokers), types = bySort(state.accountTypes);
+    const symCol = colLetter(col('심볼'));
+    const total = rows.length + EXTRA_ROWS;
+    for (let i = 0; i < total; i++) {
+      const r = i + 2, data = rows[i] || [];
+      const row = ws.getRow(r);
+      HEADERS.forEach((h, j) => {
+        const c = row.getCell(j + 1);
+        const v = data[j];
+        if (h in AUTO_COLS) {
+          c.value = { formula: `IF($${symCol}${r}="","",IFERROR(VLOOKUP($${symCol}${r},'종목목록'!$A:$E,${AUTO_COLS[h]},FALSE),"(목록에 없음)"))`, result: v ?? '' };
+          c.fill = autoFill;
+        } else if (v !== undefined && v !== '') c.value = v;
+      });
+      row.getCell(col('심볼')).numFmt = '@'; // 005930 같은 코드가 숫자로 바뀌지 않게
+      row.getCell(col('증권사')).dataValidation = { type: 'list', allowBlank: true, formulae: [`'선택목록'!$A$2:$A$${brokers.length + 1}`], showErrorMessage: true, errorTitle: '증권사', error: '목록에서 선택해 주세요 (선택목록 시트 = 증권 마스터)' };
+      row.getCell(col('계좌종류')).dataValidation = { type: 'list', allowBlank: true, formulae: [`'선택목록'!$B$2:$B$${types.length + 1}`], showErrorMessage: true, errorTitle: '계좌종류', error: '목록에서 선택해 주세요 (선택목록 시트 = 증권 마스터)' };
+    }
+
+    // 종목목록: 심볼 → 종목명·거래소·자산유형·통화 (DB = 종목 마스터 + 외부 종목 목록)
+    const list = wb.addWorksheet('종목목록', { views: [{ state: 'frozen', ySplit: 1 }] });
+    list.addRow(['심볼', '종목명', '거래소', '자산유형', '통화']).eachCell(c => { c.font = bold; c.fill = headFill; });
+    list.getColumn(1).numFmt = '@';
+    symbolRefs().forEach(x => list.addRow([x.symbol, x.name, x.exchange, x.asset_type, x.currency]));
+    [12, 34, 10, 10, 7].forEach((w, j) => { list.getColumn(j + 1).width = w; });
+
+    // 선택목록: 증권 마스터 (드롭다운 원본)
+    const sel = wb.addWorksheet('선택목록');
+    sel.addRow(['증권사', '계좌종류']).eachCell(c => { c.font = bold; c.fill = headFill; });
+    for (let i = 0; i < Math.max(brokers.length, types.length); i++) sel.addRow([brokers[i] ? brokers[i].name : null, types[i] ? types[i].name : null]);
+    sel.getColumn(1).width = 16; sel.getColumn(2).width = 16;
+
+    // 작성안내
+    const guide = wb.addWorksheet('작성안내');
+    MOCK.xlsxSamples.guide.forEach(r => guide.addRow(r));
+    guide.getRow(1).font = bold;
+    guide.getColumn(1).width = 18; guide.getColumn(2).width = 12; guide.getColumn(3).width = 96;
+
+    wb.views = [{ activeTab: 1 }];
+    return wb.xlsx.writeBuffer();
+  }
+  function saveBlob(buf, fileName) {
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
   async function exportHoldingsXlsx() {
-    XLSX.writeFile(buildWorkbook(state.meta.baseDate, currentRows()), `myAsset_현재보유_${state.meta.baseDate}.xlsx`);
+    saveBlob(await buildExcelBuffer(state.meta.baseDate, currentRows()), `myAsset_현재보유_${state.meta.baseDate}.xlsx`);
   }
   async function downloadSampleXlsx(baseDate) {
     const d = baseDate || Fmt.todayKST();
-    XLSX.writeFile(buildWorkbook(d, MOCK.xlsxSamples.sample), `myAsset_샘플데이터_${d}.xlsx`);
+    saveBlob(await buildExcelBuffer(d, MOCK.xlsxSamples.sample), `myAsset_샘플데이터_${d}.xlsx`);
   }
   async function downloadTemplateXlsx(baseDate) {
     const d = baseDate || Fmt.todayKST();
-    XLSX.writeFile(buildWorkbook(d, MOCK.xlsxSamples.template), `myAsset_업로드양식_${d}.xlsx`);
+    saveBlob(await buildExcelBuffer(d, MOCK.xlsxSamples.template), `myAsset_업로드양식_${d}.xlsx`);
   }
   async function downloadIssuesXlsx(errors, warnings) {
-    const aoa = [['구분', '행 번호', '컬럼', '입력값', '사유']];
-    errors.forEach(e => aoa.push(['오류', e.row, e.col, e.value, e.reason]));
-    warnings.forEach(e => aoa.push(['경고', e.row, e.col, e.value, e.reason]));
+    const aoa = [['구분', '행 번호', '컬럼', '입력값', 'DB 값', '사유']];
+    errors.forEach(e => aoa.push(['오류', e.row, e.col, e.value, e.expected || '', e.reason]));
+    warnings.forEach(e => aoa.push(['경고', e.row, e.col, e.value, e.expected || '', e.reason]));
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [6, 8, 12, 20, 60].map(w => ({ wch: w }));
+    ws['!cols'] = [6, 8, 12, 20, 24, 60].map(w => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws, '점검결과');
     XLSX.writeFile(wb, `myAsset_업로드점검결과_${Fmt.todayKST()}.xlsx`);
   }
@@ -712,6 +806,6 @@ window.DataService = (function () {
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,
     // 자체 점검(tools/selftest.html) 전용
-    _test: { buildWorkbook, currentRows, getBaseDate: () => state.meta.baseDate }
+    _test: { buildWorkbook, buildExcelBuffer, currentRows, getBaseDate: () => state.meta.baseDate }
   };
 })();

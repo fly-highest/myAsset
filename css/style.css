@@ -292,3 +292,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .master-col .comp-list { max-height: 330px; overflow-y: auto; }
 .master-col .comp-list li { gap: 8px; }
 .master-col .comp-list li .btn + .btn { margin-left: 3px; }
+.issue-tbl .val-in { color: var(--danger); } .issue-tbl .val-db { color: #17803d; font-weight: 600; }

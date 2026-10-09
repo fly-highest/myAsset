@@ -14,6 +14,7 @@
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>점검 항목</th><th>결과</th><th>상세</th></tr></thead><tbody id="out"></tbody></table></div>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="../js/config.js"></script>
   <script>APP_CONFIG.STORAGE_KEY = 'myAsset.selftest'; try { localStorage.removeItem('myAsset.selftest'); } catch (e) {}</script>
   <script src="../js/format.js"></script>
@@ -138,7 +139,7 @@
       let v = await upload(fileFromRows(today, MOCK.xlsxSamples.sample));
       check('㉘ 샘플 데이터 → 오류 없이 통과 (경고 허용)', v.errors.length === 0, `오류 ${v.errors.length} / 경고 ${v.warnings.length}: ` + v.warnings.map(w => w.reason).join(' | '));
       const pv = await DS.previewImport(v);
-      check('샘플 파일: 7개 자산군 모두 포함', Groups.codes.every(c => MOCK.xlsxSamples.sample.some(r => Groups.parse(r[10]) === c)) && pv.model.total.n === 12);
+      check('샘플 파일: 12행 모두 DB 와 일치', v.errors.length === 0 && pv.model.total.n === 12);
       const accBefore = (await DS.getAccounts()).length, snapsBefore = (await DS.getSnapshots('ALL')).length;
       const res = await DS.replaceCurrentHoldings(v);
       m = await model();
@@ -164,6 +165,23 @@
       check('㉒ 오류 파일 → 수량 문자 / USD 환율 누락 / 중복 행 감지',
         reasons.some(x => x.includes('수량: 숫자가 아닙니다')) && reasons.some(x => x.includes('USD 종목은 매입평균환율')) && reasons.some(x => x.includes('중복')),
         `오류 ${v.errors.length}건: ` + reasons.join(' | '));
+      // DB 일관성 검사: 다른 값은 오류 + DB 값 표시
+      const dbErr = (col, reason) => v.errors.find(e => e.col === col && e.reason.includes(reason));
+      const eName = dbErr('종목명', 'DB 값과 다릅니다'), eCur = dbErr('통화', 'DB 값과 다릅니다');
+      check('DB 일관성: 종목명·통화가 DB 와 다르면 오류 + DB 값 표시', eName && eName.value === '삼성전자보통주' && eName.expected === '삼성전자' && eCur && eCur.expected === 'KRW', `${eName && eName.value} → DB ${eName && eName.expected} / 통화 → DB ${eCur && eCur.expected}`);
+      check('DB 일관성: DB 에 없는 심볼·거래소 불일치·마스터에 없는 증권사 → 오류', !!dbErr('심볼', 'DB(종목 마스터') && !!dbErr('거래소', '거래소가 DB와 다릅니다') && !!dbErr('증권사', 'DB(증권 마스터)'),
+        [dbErr('거래소', '거래소가 DB와 다릅니다'), dbErr('증권사', 'DB(증권 마스터)')].map(e => e && `${e.value} → DB ${e.expected}`).join(' / '));
+      // 자동 입력 칸(종목명·거래소·자산유형·통화)이 비어 있어도 심볼로 DB 값을 채움
+      v = await upload(fileFromRows(today, [['키움 일반', '키움증권', '', 'QQQ', '', '', '', '', 1, 500, 1300, ''], ['키움 일반', '키움증권', '', '005930', '', '', '', '', 1, 70000, '', '']]));
+      check('자동 입력 칸이 비어 있어도 심볼로 DB 값 사용', v.errors.length === 0 && v.rows[0].name === 'QQQ' && v.rows[1].exchange === 'KRX' && v.rows[1].currency === 'KRW', `오류 ${v.errors.length}`);
+      // 내려받는 엑셀(ExcelJS: 드롭다운·자동 입력 수식) → 그대로 다시 올리면 오류 없음
+      const xbuf = await DS._test.buildExcelBuffer(DS._test.getBaseDate(), DS._test.currentRows());
+      v = await upload(new File([xbuf], 'export.xlsx'));
+      check('엑셀 다운로드 파일(드롭다운·자동입력) → 그대로 업로드 시 오류 없음', v.errors.length === 0 && v.rows.length === DS._test.currentRows().length && v.rows.every(r => r.name), `행 ${v.rows.length} · 오류 ${v.errors.length} · 경고 ${v.warnings.length}`);
+      const xwb = XLSX.read(xbuf, { type: 'array' });
+      check('엑셀 다운로드 파일에 종목목록·선택목록 시트, 자산군 열 없음', !!xwb.Sheets['종목목록'] && !!xwb.Sheets['선택목록'] && !XLSX.utils.sheet_to_json(xwb.Sheets['보유'], { header: 1 })[0].some(h => String(h).includes('자산군')),
+        xwb.SheetNames.join(', '));
+
       // ㉙ 날짜
       v = await upload(fileFromRows(Fmt.addDays(today, 1), MOCK.xlsxSamples.sample));
       check('㉙ 미래 기준일자 → 오류', v.errors.some(e => e.col === '기준일자'));

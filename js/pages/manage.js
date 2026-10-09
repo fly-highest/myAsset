@@ -152,10 +152,10 @@
         <h3 style="margin-top:0">엑셀 업로드로 계좌 현황 한 번에 바꾸기</h3>
         <ol class="steps-list">
           <li><a href="#accounts" data-goto="accounts">계좌 관리</a>에서 <b>[엑셀 다운로드]</b>로 지금 현황 파일을 받습니다.</li>
-          <li>엑셀에서 수량·평균매입가 등을 고치거나 줄을 추가·삭제합니다. (양식은 그대로)</li>
+          <li>엑셀에서 수량·평균매입가 등을 고치거나 줄을 추가·삭제합니다. <b>증권사·계좌종류는 드롭다운</b>에서 고르고, <b>심볼만 입력하면 종목명·거래소·자산유형·통화가 자동</b>으로 채워집니다.</li>
           <li>아래 <b>[XLSX 업로드]</b>로 올리고, 점검 결과와 미리보기를 확인한 뒤 <b>[반영]</b>합니다.</li>
         </ol>
-        <div class="notice">업로드한 파일 = <b>현재 최종 계좌 현황</b>입니다. 추가·삭제를 골라서 하는 것이 아니라, 파일 내용으로 계좌·보유 전체가 바뀝니다. 파일에 없는 계좌·종목은 현재 현황에서 빠집니다. (과거 이력은 바뀌지 않습니다)</div>
+        <div class="notice">올리면 먼저 <b>DB 정보(종목·증권 마스터)와 맞는지 검사</b>하고, 다른 값이 하나라도 있으면 그 값을 보여 주고 <b>반영하지 않습니다</b>. 이상이 없으면 업로드한 파일 = <b>현재 최종 계좌 현황</b>이 됩니다. 추가·삭제를 골라서 하는 것이 아니라, 파일 내용으로 계좌·보유 전체가 바뀝니다. 파일에 없는 계좌·종목은 현재 현황에서 빠집니다. (과거 이력은 바뀌지 않습니다)</div>
         <div class="toolbar">
           <button type="button" class="btn btn-primary" id="btn-upload">XLSX 업로드</button>
           ${status.canUndo ? '<button type="button" class="btn btn-ghost-danger" id="btn-undo" title="다음 스냅샷 전까지 가능">직전 상태로 되돌리기</button>' : ''}
@@ -441,16 +441,16 @@
       validated = await DataService.validateImport(parsed);
       const { errors, warnings } = validated;
       const issueRows = [...errors.map(e => ['오류', e]), ...warnings.map(e => ['경고', e])]
-        .map(([k, e]) => `<tr><td class="${k === '오류' ? 'err' : 'wrn'}">${k}</td><td class="num">${esc(e.row)}</td><td>${esc(e.col)}</td><td>${esc(e.value)}</td><td style="white-space:normal">${esc(e.reason)}</td></tr>`).join('');
+        .map(([k, e]) => `<tr><td class="${k === '오류' ? 'err' : 'wrn'}">${k}</td><td class="num">${esc(e.row)}</td><td>${esc(e.col)}</td><td class="val-in">${esc(e.value)}</td><td class="val-db" style="white-space:normal">${esc(e.expected || '')}</td><td style="white-space:normal">${esc(e.reason)}</td></tr>`).join('');
       const issues = issueRows ? `
         <div class="sec-hd"><h2 style="font-size:15px">점검 결과 — 오류 ${errors.length}건 · 경고 ${warnings.length}건</h2>
           <button type="button" class="btn btn-sm" id="dl-issues">점검 결과 xlsx 다운로드</button></div>
-        <div class="tbl-wrap scroll-y issue-tbl"><table class="tbl"><thead><tr><th>구분</th><th class="num">행 번호</th><th>컬럼</th><th>입력값</th><th>사유</th></tr></thead><tbody>${issueRows}</tbody></table></div>`
+        <div class="tbl-wrap scroll-y issue-tbl"><table class="tbl"><thead><tr><th>구분</th><th class="num">행 번호</th><th>컬럼</th><th>입력값</th><th>DB 값</th><th>사유</th></tr></thead><tbody>${issueRows}</tbody></table></div>`
         : '<div class="notice info">오류와 경고가 없습니다.</div>';
 
       if (errors.length) {
         m.body.innerHTML = `${steps(1)}<div class="small muted">파일: ${esc(validated.fileName)}${validated.baseDate ? ` · 기준일자 ${validated.baseDate}` : ''}</div>
-          <div class="notice" style="border-color:#f1b0b0;background:#fdeeee;color:#8a1f1f">오류가 ${errors.length}건 있어 반영할 수 없습니다. 파일을 고친 뒤 다시 올려 주세요. (데이터는 변경되지 않았습니다)</div>${issues}`;
+          <div class="notice" style="border-color:#f1b0b0;background:#fdeeee;color:#8a1f1f">DB 정보와 다른 값 등 오류가 <b>${errors.length}건</b> 있어 <b>반영하지 않았습니다</b> (데이터는 그대로입니다). 아래 표의 <b>입력값</b>과 <b>DB 값</b>을 비교해 파일을 고친 뒤 다시 올려 주세요.</div>${issues}`;
         bindIssues();
         m.setButtons([{ label: '다른 파일 선택', onClick: () => stepFile() }, { label: '취소' }, { label: '반영', kind: 'primary', disabled: true }]);
         return;
