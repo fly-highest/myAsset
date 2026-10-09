@@ -326,3 +326,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .zone-between { border-color: #e6d9a8; background: #fffcef; }
 .tag-active { color: #fff; background: #2453d6; }
 .invest .active-plan td, .invest .active-plan .sticky-col { background: #fff1c2; font-weight: 600; }
+[hidden] { display: none !important; }

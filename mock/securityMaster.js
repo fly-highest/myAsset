@@ -22,6 +22,7 @@ window.MOCK.accountTypes = [
   { id: 'atp-isa', name: 'ISA', sort: 2 },
   { id: 'atp-pension', name: '연금저축', sort: 3 },
   { id: 'atp-irp', name: 'IRP', sort: 4 },
+  { id: 'atp-dc', name: 'DC', sort: 4.5 },
   { id: 'atp-overseas', name: '해외주식', sort: 5 },
   { id: 'atp-cma', name: 'CMA', sort: 6 },
   { id: 'atp-gold', name: '금현물', sort: 7 },

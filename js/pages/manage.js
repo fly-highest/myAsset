@@ -439,6 +439,10 @@
     const unit = isUSD ? '$' : '₩';
     const qtyUnit = isCash ? unit : inst.asset_type === 'CRYPTO' ? inst.symbol : inst.asset_type === 'GOLD' ? 'g' : '주';
     const v = holding || { quantity: '', avg_price: '', avg_fx_rate: fx };
+    const pm = isCash ? null : (await DataService.getPriceMeta())[inst.id];
+    const manual = isCash ? null : await DataService.getManualPrice(inst.id);
+    const SRCN = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 환산', MANUAL: '직접 입력', MOCK: '예시 가격' };
+    const hasMarket = pm && !['MANUAL', 'MOCK'].includes(pm.source);
     const m = App.modal({
       title: holding ? '보유 수정' : '보유 추가',
       body: `<div class="form">
@@ -456,7 +460,15 @@
         ${isUSD ? `<div class="field"><label>매입 평균환율 (USD/KRW)</label>
           <div class="input-unit"><span>₩</span><input type="number" id="h-fx" step="any" min="0" value="${v.avg_fx_rate}"></div>
           <div class="hint">${holding ? '증권사에 표시된 평균환율을 입력하세요.' : `기본값은 현재 환율 ${Fmt.fx(fx)}입니다.`}</div></div>` : ''}
-        <div class="small muted">자산군은 자산군 현황 화면의 [구성]에서만 변경합니다.</div>
+        ${isCash ? '' : `<div class="field"><label>현재가</label>
+          <div class="ro"><span id="mp-cur">${pm ? `<b>${Fmt.price(pm.price, inst.currency)}</b> <span class="muted small">${SRCN[pm.source] || pm.source} · ${Fmt.mdhm(pm.as_of)}</span>` : '<span class="muted">시세 없음 — 평균매입가로 평가</span>'}</span>
+            <button type="button" class="btn btn-sm" id="mp-toggle" style="margin-left:8px">현재가 직접 입력</button></div>
+          <div id="mp-box" class="toolbar" style="margin-top:6px" hidden>
+            <div class="input-unit" style="width:200px"><span>${unit}</span><input type="number" id="mp-val" step="any" min="0" value="${manual ? manual.price : ''}" placeholder="현재가"></div>
+            <button type="button" class="btn btn-sm btn-primary" id="mp-save">현재가 저장</button>
+            ${manual ? '<button type="button" class="btn btn-sm btn-ghost-danger" id="mp-del">직접 입력 지우기</button>' : ''}</div>
+          <div class="hint">${hasMarket ? '이 종목은 실제 시세가 있어 직접 입력한 값보다 시세가 우선합니다.' : '직접 입력한 현재가는 시세가 없는 종목(예: 잡주)의 평가금액·손익 계산에 쓰입니다. 같은 종목을 가진 모든 계좌에 적용됩니다.'}</div></div>`}
+        <div class="small muted">자산군은 계좌/자산관리 › 자산 구성 관리에서 변경합니다.</div>
         <div class="notice" id="h-err" hidden></div></div>`,
       buttons: [{ label: '취소' }, {
         label: '저장', kind: 'primary', onClick: async api => {
@@ -474,6 +486,27 @@
         }
       }]
     });
+    // [현재가 직접 입력]: 입력 칸을 열고, 저장하면 바로 평가금액·손익에 반영
+    const tg = m.body.querySelector('#mp-toggle');
+    if (tg) {
+      const box = m.body.querySelector('#mp-box');
+      const err = m.body.querySelector('#h-err');
+      tg.onclick = () => { box.hidden = !box.hidden; if (!box.hidden) m.body.querySelector('#mp-val').focus(); };
+      m.body.querySelector('#mp-save').onclick = async () => {
+        try {
+          await DataService.setManualPrice(inst.id, m.body.querySelector('#mp-val').value);
+          App.toast(`${inst.name} 현재가를 직접 입력했습니다.`);
+          box.hidden = true;
+          tg.textContent = '현재가 직접 입력 (저장됨)';
+        } catch (e) { err.hidden = false; err.textContent = e.message; }
+      };
+      const del = m.body.querySelector('#mp-del');
+      if (del) del.onclick = async () => {
+        await DataService.setManualPrice(inst.id, null);
+        App.toast(`${inst.name}의 직접 입력 현재가를 지웠습니다.`);
+        box.hidden = true;
+      };
+    }
   }
 
   // ---------------- 새 종목 등록 (자산군 선택 가능, 미선택 시 NULL) ----------------

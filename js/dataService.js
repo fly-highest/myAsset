@@ -67,17 +67,21 @@ window.DataService = (function () {
     if (!state) state = seed();
     if (!state.targets) state.targets = clone(DEFAULT_TARGETS); // 예전 저장 데이터에는 목표 비중이 없음
     addNewDefaultBrokers();
+    // 잡주 종목코드 변경 (잡주 → 999999): 이미 등록한 브라우저도 맞춰 줌
+    state.instruments.forEach(i => { if (i.exchange === 'KRX' && i.symbol === '잡주') { i.symbol = '999999'; i.updated_at = nowISO(); } });
+    if (!state.manualPrices) state.manualPrices = {}; // 직접 입력한 현재가 { 종목id: { price, as_of } }
   }
   // 기본 증권사 목록에 나중에 추가한 항목을, 이미 쓰고 있는 브라우저에도 한 번만 넣어 줍니다.
   // (사용자가 지운 항목이 다시 생기지 않도록 넣은 항목을 meta.addedBrokers 에 기록)
-  const LATER_BROKERS = ['brk-meritz'];
+  // 증권사·계좌종류 모두 적용 (예: 메리츠증권, DC)
+  const LATER_MASTER = [['brokers', 'brk-meritz'], ['accountTypes', 'atp-dc']];
   function addNewDefaultBrokers() {
     state.meta.addedBrokers = state.meta.addedBrokers || [];
     let changed = false;
-    LATER_BROKERS.forEach(id => {
+    LATER_MASTER.forEach(([listKey, id]) => {
       if (state.meta.addedBrokers.includes(id)) return;
-      const def = MOCK.brokers.find(b => b.id === id);
-      if (def && !state.brokers.some(b => b.id === id || b.name === def.name)) { state.brokers.push(clone(def)); changed = true; }
+      const def = MOCK[listKey].find(b => b.id === id);
+      if (def && !state[listKey].some(b => b.id === id || b.name === def.name)) { state[listKey].push(clone(def)); changed = true; }
       state.meta.addedBrokers.push(id);
     });
     if (changed) { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 다음에 다시 시도 */ } }
@@ -143,9 +147,25 @@ window.DataService = (function () {
       if (i.asset_type === 'CASH') return;
       const p = L && L.prices.get(instKey(i.symbol, i.exchange));
       if (p) out[i.id] = { price: p.price, source: p.source, as_of: p.as_of };
+      else if (state.manualPrices[i.id]) out[i.id] = { price: state.manualPrices[i.id].price, source: 'MANUAL', as_of: state.manualPrices[i.id].as_of };
       else if (MOCK.prices.values[i.id] != null) out[i.id] = { price: MOCK.prices.values[i.id], source: 'MOCK', as_of: MOCK.prices.as_of };
     });
     return out;
+  }
+  // 현재가 직접 입력 (시세가 없는 종목용, 예: 잡주). 실제 시세가 있으면 시세가 우선. price=null 이면 삭제
+  async function setManualPrice(instrumentId, price) {
+    const inst = state.instruments.find(i => i.id === instrumentId);
+    if (!inst) throw fail('종목을 찾을 수 없습니다.');
+    if (price === null || price === '') delete state.manualPrices[instrumentId];
+    else {
+      const v = Number(String(price).replace(/[,\s₩$]/g, ''));
+      if (!(v > 0)) throw fail('현재가는 0보다 큰 숫자로 입력해 주세요.');
+      state.manualPrices[instrumentId] = { price: v, as_of: nowISO() };
+    }
+    commit();
+  }
+  async function getManualPrice(instrumentId) {
+    return state.manualPrices[instrumentId] ? clone(state.manualPrices[instrumentId]) : null;
   }
   async function getPrices() {
     const meta = await getPriceMeta();
@@ -1082,7 +1102,7 @@ window.DataService = (function () {
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     getHoldings, addHolding, updateHolding, deleteHolding,
-    getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal,
+    getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
     getSnapshots, getSnapshotItems, createDailySnapshot,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,

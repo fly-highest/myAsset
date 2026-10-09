@@ -31,12 +31,12 @@ window.UI = (function () {
   const w = (part, whole) => (whole ? (part / whole) * 100 : 0);
 
   // 현재가 칸: 마우스를 올리면 기준 시각·출처, 예시(Mock) 가격이면 [예시] 표시
-  const SRC = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 × 환율', MOCK: '예시 가격(Mock)' };
+  const SRC = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 × 환율', MANUAL: '직접 입력', MOCK: '예시 가격(Mock)' };
   function priceCell(cp, inst, meta, noPrice) {
     if (inst.asset_type === 'CASH' || noPrice) return '<span class="muted">—</span>';
     if (!meta) return Fmt.price(cp, inst.currency);
     const title = `${SRC[meta.source] || meta.source} · ${Fmt.mdhm(meta.as_of)} 기준`;
-    return `<span class="price-cell" title="${esc(title)}">${Fmt.price(cp, inst.currency)}</span>${meta.source === 'MOCK' ? '<span class="tag-mock" title="실제 시세가 아닌 예시 가격">예시</span>' : ''}<div class="sub">${Fmt.mdhm(meta.as_of)}</div>`;
+    return `<span class="price-cell" title="${esc(title)}">${Fmt.price(cp, inst.currency)}</span>${meta.source === 'MOCK' ? '<span class="tag-mock" title="실제 시세가 아닌 예시 가격">예시</span>' : meta.source === 'MANUAL' ? '<span class="tag-mock" title="직접 입력한 현재가">직접</span>' : ''}<div class="sub">${Fmt.mdhm(meta.as_of)}</div>`;
   }
 
   // 자산군 표시 (계좌 관리 화면: 읽기 전용, 클릭 시 자산군 현황으로 이동)
