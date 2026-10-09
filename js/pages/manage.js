@@ -497,6 +497,8 @@
           await DataService.setManualPrice(inst.id, m.body.querySelector('#mp-val').value);
           App.toast(`${inst.name} 현재가를 직접 입력했습니다.`);
           box.hidden = true;
+          const saved = await DataService.getManualPrice(inst.id);
+          if (!hasMarket && saved) m.body.querySelector('#mp-cur').innerHTML = `<b>${Fmt.price(saved.price, inst.currency)}</b> <span class="muted small">직접 입력 · ${Fmt.mdhm(saved.as_of)}</span>`;
           tg.textContent = '현재가 직접 입력 (저장됨)';
         } catch (e) { err.hidden = false; err.textContent = e.message; }
       };
