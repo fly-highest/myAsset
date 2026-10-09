@@ -21,7 +21,7 @@ window.Fmt = (function () {
   function qty(v, inst) {
     if (!inst) return n4.format(v);
     if (inst.asset_type === 'CRYPTO') return n8.format(v);
-    if (inst.asset_type === 'CASH') return inst.currency === 'USD' ? n2.format(v) : n0.format(v);
+    if (inst.asset_type === 'CASH') return money(v, inst.currency); // 현금은 금액이므로 ₩ / $ 표시
     return n4.format(v);
   }
   // 단가(원본통화)

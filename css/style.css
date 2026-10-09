@@ -232,3 +232,5 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .tree td { font-size: 13px; }
 .tree .nm .upd { font-weight: 400; }
 .tree .acc-row .btn-ghost { margin-left: 4px; padding: 1px 7px; }
+.tree td.actions { white-space: normal; width: 1%; }
+.tree td.actions .btn { display: flex; width: 100%; justify-content: center; margin: 2px 0 !important; }

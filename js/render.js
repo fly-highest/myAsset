@@ -14,9 +14,13 @@ window.UI = (function () {
     }
     return h;
   }
-  function ret(v) {
+  function ret(v, { split = false } = {}) {
     let h = v.parts.map(p => `<div class="ln ${Fmt.cls(p.ret, 'PCT')}">${Fmt.pct(p.ret)}</div>`).join('');
     if (v.refRetK != null) h += `<div class="sub" title="원화 기준 수익률 (환차손익 포함)">원화 <span class="${Fmt.cls(v.refRetK, 'PCT')}">${Fmt.pct(v.refRetK)}</span></div>`;
+    if (split && v.split) {
+      const inv = v.parts[0].inv, rp = Calc.pct(v.split.priceP, inv), rf = Calc.pct(v.split.fxP, inv);
+      h += `<div class="sub">가격 <span class="${Fmt.cls(rp, 'PCT')}">${Fmt.pct(rp)}</span></div><div class="sub">환차 <span class="${Fmt.cls(rf, 'PCT')}">${Fmt.pct(rf)}</span></div>`;
+    }
     return h;
   }
   function weight(w, bar = true) {
@@ -96,10 +100,10 @@ window.UI = (function () {
           <b>${esc(acc.name)}</b> <span class="muted">${esc(acc.broker || '')} · ${acc.rows.length}종목</span>${editable ? `
           <button type="button" class="btn btn-sm btn-ghost" data-act="edit-account" data-id="${esc(acc.id)}">수정</button><button type="button" class="btn btn-sm btn-ghost btn-ghost-danger" data-act="delete-account" data-id="${esc(acc.id)}">삭제</button>` : ''}</td>
         <td colspan="4" class="muted small">계좌 소계</td>
-        <td class="num">${amt(av, 'val')}</td><td class="num">${amt(av, 'inv')}</td><td class="num">${prof(av)}</td><td class="num">${ret(av)}</td>
+        <td class="num">${amt(av, 'val')}</td><td class="num">${amt(av, 'inv')}</td><td class="num">${prof(av)}</td><td class="num">${ret(av, { split: true })}</td>
         <td class="num" title="전체 대비 비중">${weight(w(acc.agg.valK, total), false)}</td>
         ${editable ? `<td class="actions">
-          <button type="button" class="btn btn-sm btn-primary" data-act="add-holding" data-id="${esc(acc.id)}">종목 추가</button></td>` : ''}
+          <button type="button" class="btn btn-sm btn-primary" data-act="add-holding" data-id="${esc(acc.id)}" title="이 계좌에 종목 추가">+ 종목</button></td>` : ''}
       </tr>`;
       if (isCol) return;
       if (!rows.length) {
@@ -118,7 +122,7 @@ window.UI = (function () {
           <td class="num">${isCash ? '<span class="muted">—</span>' : Fmt.price(x.r.ap, i.currency)}</td>
           <td class="num">${isUSD ? Fmt.fx(x.r.fxBuy) : '<span class="muted">—</span>'}</td>
           <td class="num">${isCash ? '<span class="muted">—</span>' : x.noPrice ? '<span class="muted">—</span>' : Fmt.price(x.r.cp, i.currency)}</td>
-          <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v)}</td><td class="num">${ret(v)}</td>
+          <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v)}</td><td class="num">${ret(v, { split: true })}</td>
           <td class="num" title="계좌 내 비중">${weight(w(x.r.valK, acc.agg.valK), false)}</td>
           ${editable ? `<td class="actions">
             <button type="button" class="btn btn-sm" data-act="edit-holding" data-id="${esc(h.id)}">수정</button>
@@ -138,7 +142,7 @@ window.UI = (function () {
         ${editable ? '<th>관리</th>' : ''}
       </tr></thead>
       <tbody>${body}</tbody>
-      <tfoot><tr><td colspan="7">전체 합계</td><td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv)}</td><td class="num">${weight(total ? 100 : 0)}</td>${editable ? '<td></td>' : ''}</tr></tfoot>
+      <tfoot><tr><td colspan="7">전체 합계</td><td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv, { split: true })}</td><td class="num">${weight(total ? 100 : 0, false)}</td>${editable ? '<td></td>' : ''}</tr></tfoot>
     </table></div>`;
   }
 
