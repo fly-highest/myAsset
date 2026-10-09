@@ -236,14 +236,51 @@
   // ---------------- 자산군 편집 (추가 · 이름/색 수정 · 순서 · 삭제) ----------------
   function groupEditor() {
     const m = App.modal({ title: '자산군 추가/삭제', size: 'mid', body: '', buttons: [{ label: '닫기', kind: 'primary' }] });
+    let editing = null, draft = null; // [수정]으로 펼친 자산군 코드, 입력 중인 이름·색 (종목 추가·제거 후에도 유지)
+    // [수정]: 이름·색 변경 + 이 자산군에 속한 종목 추가·제거 (종목 자체·보유 내역은 지워지지 않고 자산군 분류만 바뀜)
+    function editPanel(g, list) {
+      const d = draft || { name: g.name, color: g.color };
+      return `<div class="g-edit">
+        <div class="toolbar"><input type="color" data-e-color value="${d.color}" style="width:44px;padding:2px"><input type="text" data-e-name value="${esc(d.name)}" style="flex:1;width:auto">
+          <button type="button" class="btn btn-sm btn-primary" data-ok>이름·색 저장</button><button type="button" class="btn btn-sm" data-cancel>닫기</button></div>
+        <div class="g-members">
+          <div class="small muted" style="margin-bottom:6px">이 자산군의 종목 <b>${list.length}</b>개 — [×]로 빼면 미지정(기타종목으로 집계)이 됩니다. 바로 저장됩니다.</div>
+          <div class="g-chips">${list.map(i => `<span class="chip-inst held g-chip" title="${esc(i.symbol)} · ${esc(i.exchange)} · ${esc(i.currency)}">${esc(i.name)}${i.symbol !== i.name ? ` <small class="muted">${esc(i.symbol)}</small>` : ''}<button type="button" class="x-mini" data-rm="${esc(i.id)}" title="이 자산군에서 빼기">×</button></span>`).join('') || '<span class="muted small">종목이 없습니다</span>'}</div>
+          <button type="button" class="btn btn-sm btn-primary" data-add-inst style="margin-top:8px">+ 종목 추가</button>
+        </div></div>`;
+    }
+    function bindEdit(li, g, list, showErr) {
+      const color = li.querySelector('[data-e-color]'), name = li.querySelector('[data-e-name]');
+      const keep = () => { draft = { name: name.value, color: color.value }; };
+      const save = async () => {
+        try { await DataService.updateGroup(g.code, { name: name.value, color: color.value }); App.toast('자산군 이름·색을 저장했습니다.'); editing = null; draft = null; draw(); }
+        catch (e) { showErr(e.message); }
+      };
+      li.querySelector('[data-ok]').onclick = save;
+      li.querySelector('[data-cancel]').onclick = () => { editing = null; draft = null; draw(); };
+      name.onkeydown = e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); editing = null; draw(); } };
+      li.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+        keep();
+        const inst = list.find(i => i.id === b.dataset.rm);
+        await DataService.updateInstrumentGroup(inst.id, null);
+        App.toast(`${inst.name}을(를) ${g.name}에서 뺐습니다 (미지정).`);
+        draw();
+      });
+      li.querySelector('[data-add-inst]').onclick = async () => { keep(); await addToGroup(g.code); draw(); };
+    }
     async function draw() {
-      const groups = await DataService.getGroups();
+      const [groups, insts] = await Promise.all([DataService.getGroups(), DataService.getInstruments()]);
+      const members = {};
+      insts.forEach(i => { if (i.asset_group) (members[i.asset_group] = members[i.asset_group] || []).push(i); });
       m.body.innerHTML = `
         <p class="small muted" style="margin-top:0">자산군을 추가하면 모든 화면의 표·차트와 목표 비중에 칸이 생깁니다(목표 비중은 0%로 시작). 삭제하면 그 자산군의 종목은 <b>미지정</b>(기타종목으로 집계)이 되고, 기준별 목표 비중에서 그 몫이 빠집니다. 기타종목은 미지정 종목이 모이는 곳이라 삭제할 수 없습니다.</p>
-        <ul class="comp-list">${groups.map((g, i) => `
-          <li data-code="${esc(g.code)}">
+        <ul class="comp-list grp-list">${groups.map((g, i) => `
+          <li data-code="${esc(g.code)}" class="${editing === g.code ? 'editing' : ''}">
+            <div class="g-line">
             <span class="m-name"><span class="dot" style="background:${g.color}"></span>${esc(g.name)} <span class="muted small">· ${g.count}종목</span></span>
-            <span><button type="button" class="btn btn-sm" data-up ${i === 0 ? 'disabled' : ''} title="위로">▲</button><button type="button" class="btn btn-sm" data-down ${i === groups.length - 1 ? 'disabled' : ''} title="아래로">▼</button><button type="button" class="btn btn-sm" data-edit>수정</button>${g.code === Groups.FALLBACK ? '' : '<button type="button" class="btn btn-sm btn-ghost-danger" data-del>삭제</button>'}</span>
+            <span><button type="button" class="btn btn-sm" data-up ${i === 0 ? 'disabled' : ''} title="위로">▲</button><button type="button" class="btn btn-sm" data-down ${i === groups.length - 1 ? 'disabled' : ''} title="아래로">▼</button><button type="button" class="btn btn-sm ${editing === g.code ? 'btn-primary' : ''}" data-edit title="이름·색 변경, 종목 추가·제거">수정</button>${g.code === Groups.FALLBACK ? '' : '<button type="button" class="btn btn-sm btn-ghost-danger" data-del>삭제</button>'}</span>
+            </div>
+            ${editing === g.code ? editPanel(g, members[g.code] || []) : ''}
           </li>`).join('')}
         </ul>
         <div class="toolbar" style="margin-top:8px"><input type="color" id="g-new-color" value="#e05e9b" title="색상" style="width:44px;padding:2px"><input type="text" id="g-new" placeholder="새 자산군 이름 (예: 채권)" style="flex:1;width:auto"><button type="button" class="btn btn-primary btn-sm" id="g-add">추가</button></div>
@@ -260,18 +297,8 @@
         const g = groups.find(x => x.code === li.dataset.code);
         li.querySelector('[data-up]').onclick = async () => { await DataService.moveGroup(g.code, -1); draw(); };
         li.querySelector('[data-down]').onclick = async () => { await DataService.moveGroup(g.code, 1); draw(); };
-        li.querySelector('[data-edit]').onclick = () => {
-          li.innerHTML = `<span class="toolbar" style="flex:1"><input type="color" value="${g.color}" style="width:44px;padding:2px"><input type="text" value="${esc(g.name)}" style="flex:1;width:auto"></span><span><button type="button" class="btn btn-sm btn-primary" data-ok>저장</button><button type="button" class="btn btn-sm" data-cancel>취소</button></span>`;
-          const [color, name] = li.querySelectorAll('input');
-          name.focus(); name.select();
-          const save = async () => {
-            try { await DataService.updateGroup(g.code, { name: name.value, color: color.value }); App.toast('자산군을 수정했습니다.'); draw(); }
-            catch (e) { showErr(e.message); }
-          };
-          li.querySelector('[data-ok]').onclick = save;
-          li.querySelector('[data-cancel]').onclick = () => draw();
-          name.onkeydown = e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); draw(); } };
-        };
+        li.querySelector('[data-edit]').onclick = () => { editing = editing === g.code ? null : g.code; draft = null; draw(); };
+        if (editing === g.code) bindEdit(li, g, members[g.code] || [], showErr);
         const del = li.querySelector('[data-del]');
         if (del) del.onclick = async () => {
           const plans = (await DataService.getTargetPlans()).filter(p => p.weights[g.code]);

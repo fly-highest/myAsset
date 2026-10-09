@@ -334,3 +334,12 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .cloud-chip.busy { color: #a15c00; border-color: #f0d9a8; background: #fff8e6; }
 .cloud-chip.bad { color: var(--danger); border-color: #f1b0b0; background: #fdeeee; cursor: pointer; }
 .map-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.grp-list li { display: block; }
+.grp-list .g-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.grp-list li.editing { background: #f7f9fd; }
+.g-edit { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.g-members { margin-top: 10px; }
+.g-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; }
+.g-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 9px; }
+.x-mini { border: 0; background: transparent; color: #8a909c; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 4px; }
+.x-mini:hover { color: var(--danger); background: #fdeeee; }
