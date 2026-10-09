@@ -24,7 +24,15 @@
       const v = Calc.view(m.total, mode, m.fx);
       // 자산군별 총액 7칸 → 자산군별 비중 7칸 순서
       const amounts = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${UI.amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val')}</td>`).join('');
-      const weights = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${Fmt.weight(UI.w(m.groups[g.code].agg.valK, m.total.valK))}</td>`).join('');
+      // 혼합 모드: 원화 자산 안에서의 비중(한국) / 달러 자산 안에서의 비중(미국)을 나눠 표시
+      const weightCell = a => {
+        if (mode !== 'MIXED') return Fmt.weight(UI.w(a.valK, m.total.valK));
+        const lines = [];
+        if (a.nKR) lines.push(`<div class="ln"><span class="cur-tag">한국</span>${Fmt.weight(UI.w(a.kr.val, m.total.kr.val))}</div>`);
+        if (a.nUS) lines.push(`<div class="ln"><span class="cur-tag">미국</span>${Fmt.weight(UI.w(a.us.val, m.total.us.val))}</div>`);
+        return lines.join('') || Fmt.weight(0);
+      };
+      const weights = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${weightCell(m.groups[g.code].agg)}</td>`).join('');
       const groups = amounts + weights;
       return `<tr>
         <td class="nowrap sticky-col">${s.snapshot_date} <span class="muted small">${s.snapshot_time}</span>${s.simulated ? ' <span class="tag">시뮬레이션</span>' : ''}</td>
@@ -54,14 +62,14 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><span class="small muted">자산군은 당시 분류 · 비중은 원화 환산 기준</span></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span></div>
         <div class="tbl-wrap hist-wrap"><table class="tbl hist">
           <thead>
             <tr>
               <th rowspan="2" class="sticky-col">날짜</th><th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
               <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
               <th colspan="${Groups.list.length}" class="center g-first">자산군별 총액</th>
-              <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">(원화 환산 기준)</span></th>
+              <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">${mode === 'MIXED' ? '(한국 = 원화 자산 안에서 · 미국 = 달러 자산 안에서)' : '(원화 환산 기준)'}</span></th>
             </tr>
             <tr>${[0, 1].map(() => Groups.list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
           </thead>
