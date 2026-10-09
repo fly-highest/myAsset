@@ -14,8 +14,9 @@ window.Calc = (function () {
       currency, q, ap, cp, fxBuy, fxE,
       invO, valO, profO, retO: pct(profO, invO),
       invK, valK, profK, retK: pct(profK, invK),
-      priceP: (cp - ap) * q * fxBuy, // 가격손익
-      fxP: q * cp * (fxE - fxBuy) // 환차손익
+      // 손익 분해 (사용자 결정 2026-10-09: 환차손익은 매입금액 기준)
+      priceP: (cp - ap) * q * fxE, // 가격손익 = 달러 손익 × 평가 환율
+      fxP: q * ap * (fxE - fxBuy) // 환차손익 = 매입금액(달러) × 환율 변동
     };
   }
 

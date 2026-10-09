@@ -50,8 +50,11 @@
     try {
       // ⑮ 환차손익 예시
       const r = Calc.row({ quantity: 10, avg_price: 500, avg_fx_rate: 1300 }, 'USD', 550, 1400);
-      check('⑮ QQQ 10주 $500·1,300원 → $550·1,400원', near(r.invK, 6500000) && near(r.valK, 7700000) && near(r.profK, 1200000) && near(r.priceP, 650000) && near(r.fxP, 550000) && Fmt.pct(r.retK) === '+18.46%' && Fmt.pct(r.retO) === '+10.00%',
+      check('⑮ QQQ 10주 $500·1,300원 → $550·1,400원', near(r.invK, 6500000) && near(r.valK, 7700000) && near(r.profK, 1200000) && near(r.priceP, 700000) && near(r.fxP, 500000) && Fmt.pct(r.retK) === '+18.46%' && Fmt.pct(r.retO) === '+10.00%',
         `투자 ${Fmt.krw(r.invK)} 평가 ${Fmt.krw(r.valK)} 손익 ${Fmt.krw(r.profK)} (${Fmt.pct(r.retK)}) = 가격 ${Fmt.krw(r.priceP)} + 환차 ${Fmt.krw(r.fxP)}, 달러 ${Fmt.pct(r.retO)}`);
+      const rk = Calc.row({ quantity: 12, avg_price: 480.25, avg_fx_rate: 1342.10 }, 'USD', 552.30, 1385.20);
+      check('키움 일반 QQQ 환차손익 = 매입금액 $5,763 × 43.10', Fmt.krw(rk.fxP) === '₩248,385' && Fmt.krw(rk.priceP) === '₩1,197,644' && Fmt.krw(rk.profK) === '₩1,446,029',
+        `가격 ${Fmt.krw(rk.priceP)} + 환차 ${Fmt.krw(rk.fxP)} = ${Fmt.krw(rk.profK)}`);
       const r2 = Calc.row({ quantity: 10, avg_price: 500, avg_fx_rate: 1300 }, 'USD', 500, 1400);
       check('⑯ 가격 불변·환율만 상승 → 달러 손익 0, 원화 손익 = 환차손익', r2.profO === 0 && near(r2.profK, r2.fxP), `달러 ${Fmt.usd(r2.profO)}, 원화 ${Fmt.krw(r2.profK)}, 환차 ${Fmt.krw(r2.fxP)}`);
 
