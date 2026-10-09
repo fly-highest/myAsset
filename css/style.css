@@ -241,3 +241,12 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .tree td { padding-top: 5px; padding-bottom: 5px; }
 .tree .sub { line-height: 1.25; }
 .date-range input[type=date] { width: auto; padding: 5px 8px; font-size: 13px; }
+
+/* 이력: 날짜별 자산 현황 표 (세로·가로 스크롤, 제목줄과 날짜 칸 고정) */
+.hist-wrap { max-height: 70vh; overflow: auto; }
+.hist thead th { top: 0; }
+.hist thead tr:nth-child(2) th { top: 33px; }
+.hist .g-first { border-left: 1px solid var(--line); }
+.hist .sticky-col { position: sticky; left: 0; background: #fff; z-index: 2; }
+.hist thead .sticky-col { background: #f8f9fb; z-index: 4; }
+.hist tbody tr:hover .sticky-col { background: #fafbfd; }
