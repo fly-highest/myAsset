@@ -172,6 +172,7 @@ select.inline { width: auto; padding: 5px 8px; font-size: 13px; }
 .modal-hd .x { border: 0; background: none; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; }
 .modal-bd { padding: 16px 18px; overflow-y: auto; }
 .modal-ft { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); background: #fafbfc; border-radius: 0 0 12px 12px; }
+.modal-ft .ack-check { margin: 0 auto 0 0; align-self: center; padding: 6px 10px; border: 1px solid #f0c36d; background: #fff8e6; border-radius: 8px; }
 .confirm-msg { line-height: 1.6; }
 .confirm-msg small { color: var(--muted); }
 
@@ -327,3 +328,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .tag-active { color: #fff; background: #2453d6; }
 .invest .active-plan td, .invest .active-plan .sticky-col { background: #fff1c2; font-weight: 600; }
 [hidden] { display: none !important; }
+.issue-tbl td:nth-child(4) { width: 26%; } .issue-tbl td:nth-child(5) { width: 22%; } .issue-tbl td:nth-child(6) { width: 34%; }

@@ -671,16 +671,21 @@
         <h3 class="sec-sub">업로드 현황 확인 — 반영하면 아래와 같이 바뀝니다</h3>
         ${UI.totalsCards(pv.model.total, mode, pv.fx)}
         <h3 class="sec-sub">자산군별 금액·비중</h3>${UI.groupTable(pv.model, mode, { link: false })}
-        <h3 class="sec-sub">계좌 → 보유 종목</h3>${UI.holdingsTree(pv.model, mode, { editable: false, linkGroups: false, byBroker: true })}
-        ${warnings.length ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="ack"> 경고 ${warnings.length}건을 확인했습니다</label>` : ''}`;
+        <h3 class="sec-sub">계좌 → 보유 종목</h3>${UI.holdingsTree(pv.model, mode, { editable: false, linkGroups: false, byBroker: true })}`;
       bindIssues();
       m.setButtons([
         { label: '다른 파일 선택', onClick: () => stepFile() },
         { label: '취소' },
         { label: '반영', kind: 'primary', id: 'btn-apply', disabled: warnings.length > 0, onClick: apply }
       ]);
-      const ack = m.body.querySelector('#ack');
-      if (ack) ack.onchange = () => { m.footer.querySelector('#btn-apply').disabled = !ack.checked; };
+      // 경고가 있으면 [반영] 바로 옆(아래 버튼줄)의 확인 체크 후 반영 가능 — 스크롤하지 않아도 보이게
+      if (warnings.length) {
+        const lab = document.createElement('label');
+        lab.className = 'check ack-check';
+        lab.innerHTML = `<input type="checkbox" id="ack"> 경고 <b>${warnings.length}</b>건을 확인했습니다 <span class="muted small">(체크하면 [반영]이 켜집니다)</span>`;
+        m.footer.prepend(lab);
+        lab.querySelector('#ack').onchange = e => { m.footer.querySelector('#btn-apply').disabled = !e.target.checked; };
+      }
     }
 
     function bindIssues() {
