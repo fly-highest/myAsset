@@ -252,3 +252,6 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .hist tbody tr:hover .sticky-col { background: #fafbfd; }
 .tbl th.center { text-align: center; }
 .chart-box.half { height: 200px; }
+.hist .cur-col { color: var(--muted); font-size: 12.5px; }
+.hist tr.pair-top td { border-bottom-style: dashed; }
+.hist tr.pair-bottom td { border-bottom: 1px solid var(--line); }

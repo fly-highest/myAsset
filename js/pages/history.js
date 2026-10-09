@@ -20,24 +20,36 @@
     const last = snaps[snaps.length - 1];
 
     // 날짜별 자산 현황 표: 총합 + 자산군별 총액·비중 (최근 날짜가 위)
+    const mixed = mode === 'MIXED';
+    const gcell = (i, html) => `<td class="num${i === 0 ? ' g-first' : ''}">${html}</td>`;
+    const dateCell = (s, span) => `<td class="nowrap sticky-col"${span ? ` rowspan="${span}"` : ''}>${s.snapshot_date} <span class="muted small">${s.snapshot_time}</span>${s.simulated ? ' <span class="tag">시뮬레이션</span>' : ''}</td>`;
     const rows = snaps.map((s, i) => ({ s, m: models[i] })).reverse().map(({ s, m }) => {
-      const v = Calc.view(m.total, mode, m.fx);
-      // 자산군별 총액 7칸 → 자산군별 비중 7칸 순서
-      const amounts = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${UI.amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val')}</td>`).join('');
-      // 혼합 모드: 원화 자산 안에서의 비중(한국) / 달러 자산 안에서의 비중(미국)을 나눠 표시
-      const weightCell = a => {
-        if (mode !== 'MIXED') return Fmt.weight(UI.w(a.valK, m.total.valK));
-        const lines = [];
-        if (a.nKR) lines.push(`<div class="ln"><span class="cur-tag">한국</span>${Fmt.weight(UI.w(a.kr.val, m.total.kr.val))}</div>`);
-        if (a.nUS) lines.push(`<div class="ln"><span class="cur-tag">미국</span>${Fmt.weight(UI.w(a.us.val, m.total.us.val))}</div>`);
-        return lines.join('') || Fmt.weight(0);
-      };
-      const weights = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${weightCell(m.groups[g.code].agg)}</td>`).join('');
-      const groups = amounts + weights;
-      return `<tr>
-        <td class="nowrap sticky-col">${s.snapshot_date} <span class="muted small">${s.snapshot_time}</span>${s.simulated ? ' <span class="tag">시뮬레이션</span>' : ''}</td>
-        <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v, { split: false })}</td><td class="num">${UI.ret(v)}</td>
-        <td class="num">${Fmt.fx(m.fx || 0)}</td>${groups}</tr>`;
+      if (!mixed) {
+        // 원화환산·달러환산: 날짜당 1줄. 자산군별 총액 7칸 → 자산군별 비중 7칸 (비중은 원화 환산 기준)
+        const v = Calc.view(m.total, mode, m.fx);
+        const amounts = Groups.list.map((g, i) => gcell(i, UI.amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val'))).join('');
+        const weights = Groups.list.map((g, i) => gcell(i, Fmt.weight(UI.w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
+        return `<tr>${dateCell(s)}
+          <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v, { split: false })}</td><td class="num">${UI.ret(v)}</td>
+          <td class="num">${Fmt.fx(m.fx || 0)}</td>${amounts}${weights}</tr>`;
+      }
+      // 혼합 모드: 날짜당 원화 줄 + 달러 줄. 원화 = 원화 자산만(₩), 달러 = 달러 자산만($). 비중은 그 통화 자산 안에서.
+      return [['KRW', '원화', 'kr'], ['USD', '달러', 'us']].map(([cur, label, k], idx) => {
+        const t = m.total[k], prof = t.val - t.inv, ret = Calc.pct(prof, t.inv);
+        const amounts = Groups.list.map((g, i) => {
+          const a = m.groups[g.code].agg;
+          return gcell(i, (k === 'kr' ? a.nKR : a.nUS) ? Fmt.money(a[k].val, cur) : '<span class="muted">—</span>');
+        }).join('');
+        const weights = Groups.list.map((g, i) => {
+          const a = m.groups[g.code].agg;
+          return gcell(i, (k === 'kr' ? a.nKR : a.nUS) ? Fmt.weight(UI.w(a[k].val, t.val)) : '<span class="muted">—</span>');
+        }).join('');
+        return `<tr class="${idx === 0 ? 'pair-top' : 'pair-bottom'}">${idx === 0 ? dateCell(s, 2) : ''}
+          <td class="cur-col">${label}</td>
+          <td class="num">${Fmt.money(t.val, cur)}</td><td class="num">${Fmt.money(t.inv, cur)}</td>
+          <td class="num ${Fmt.cls(prof, cur)}">${Fmt.signedMoney(prof, cur)}</td><td class="num ${Fmt.cls(ret, 'PCT')}">${Fmt.pct(ret)}</td>
+          ${idx === 0 ? `<td class="num" rowspan="2">${Fmt.fx(m.fx || 0)}</td>` : ''}${amounts}${weights}</tr>`;
+      }).join('');
     }).join('');
 
     document.getElementById('main').innerHTML = `
@@ -66,14 +78,14 @@
         <div class="tbl-wrap hist-wrap"><table class="tbl hist">
           <thead>
             <tr>
-              <th rowspan="2" class="sticky-col">날짜</th><th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
+              <th rowspan="2" class="sticky-col">날짜</th>${mixed ? '<th rowspan="2">통화</th>' : ''}<th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
               <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
               <th colspan="${Groups.list.length}" class="center g-first">자산군별 총액</th>
-              <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">${mode === 'MIXED' ? '(한국 = 원화 자산 안에서 · 미국 = 달러 자산 안에서)' : '(원화 환산 기준)'}</span></th>
+              <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
             </tr>
             <tr>${[0, 1].map(() => Groups.list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
           </thead>
-          <tbody>${rows || `<tr><td colspan="${6 + Groups.list.length * 2}" class="muted">스냅샷이 없습니다</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + Groups.list.length * 2}" class="muted">스냅샷이 없습니다</td></tr>`}</tbody>
         </table></div>
       </div>`;
 
