@@ -32,7 +32,7 @@ window.App = (function () {
         <a class="brand" href="index.html">my<b>Asset</b> <span class="badge-mock" title="실제 DB가 아닌 Mock(가상) 데이터로 동작합니다">Mock</span></a>
         <nav class="nav">${PAGES.map(p => `<a href="${p.href}" class="${p.key === pageKey ? 'active' : ''}">${p.label}</a>`).join('')}</nav>
         <div class="hdr-right">
-          <span class="chip fx-chip" id="hdr-fx" title="손익 계산에 쓰는 현재 환율">적용 환율 USD/KRW <b>…</b></span>
+          <span class="chip fx-chip" id="hdr-fx" title="적용 환율 (USD/KRW) — 손익 계산에 쓰는 현재 환율">$1 = <b>…</b></span>
           <div class="seg" role="group" aria-label="통화 표시">
             ${MODES.map(m => `<button type="button" data-mode="${m.code}" class="${m.code === app.mode ? 'on' : ''}">${m.label}</button>`).join('')}
           </div>
