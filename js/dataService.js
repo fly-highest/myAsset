@@ -278,7 +278,7 @@ window.DataService = (function () {
     if (!name) throw fail('계좌명을 입력해 주세요.');
     if (!state.brokers.some(b => b.id === a.broker_id)) throw fail('증권사를 선택해 주세요.');
     if (a.account_type_id && !state.accountTypes.some(t => t.id === a.account_type_id)) throw fail('계좌종류를 다시 선택해 주세요.');
-    if (state.accounts.some(x => x.id !== exceptId && x.name === name)) throw fail('같은 이름의 계좌가 이미 있습니다.');
+    if (state.accounts.some(x => x.id !== exceptId && x.name === name && x.broker_id === a.broker_id)) throw fail('같은 증권사에 같은 이름의 계좌가 이미 있습니다.'); // 증권사가 다르면 같은 이름 허용
     return { name, broker_id: a.broker_id, account_type_id: a.account_type_id || null, memo: String(a.memo || '').trim() };
   }
   async function addAccount(a) {
@@ -878,12 +878,12 @@ window.DataService = (function () {
       if (!broker) err('증권사', '필수 값이 비어 있습니다');
       else if (!brokerNames.includes(broker)) err('증권사', 'DB(증권 마스터)에 없는 증권사입니다', brokerNames.join(', '));
       if (accType && !typeNames.includes(accType)) err('계좌종류', 'DB(증권 마스터)에 없는 계좌종류입니다', typeNames.join(', '));
+      // 계좌는 계좌명 + 증권사로 구분 (증권사가 다르면 같은 계좌명도 다른 계좌)
       if (acc && broker) {
-        const a = accInfo[acc];
-        if (!a) accInfo[acc] = { broker, accType, row: rowNo };
+        const a = accInfo[acc + '|' + broker];
+        if (!a) accInfo[acc + '|' + broker] = { broker, accType, row: rowNo };
         else {
-          if (a.broker !== broker) err('증권사', `같은 계좌명(${acc})에 증권사가 다릅니다`, `${a.row}행: ${a.broker}`);
-          if (accType && a.accType && a.accType !== accType) err('계좌종류', `같은 계좌명(${acc})에 계좌종류가 다릅니다`, `${a.row}행: ${a.accType}`);
+          if (accType && a.accType && a.accType !== accType) err('계좌종류', `같은 계좌(${broker} ${acc})에 계좌종류가 다릅니다`, `${a.row}행: ${a.accType}`);
           if (!a.accType && accType) a.accType = accType;
         }
       }
@@ -913,7 +913,7 @@ window.DataService = (function () {
         const k = catalogKey(ref);
         if (!ref.id && !newSeen[k]) { newSeen[k] = true; warn('심볼', '전체 상장 종목 목록에 있는 종목이라 종목 마스터에 새로 등록됩니다', `${ref.symbol}/${ref.exchange} ${ref.name}`); }
         if (acc) {
-          const dk = acc + '|' + k;
+          const dk = acc + '|' + broker + '|' + k;
           if (seen[dk]) err('심볼', `같은 계좌에 같은 종목이 중복됩니다 (${seen[dk]}행과 중복)`, '', `${ref.symbol}/${ref.exchange}`);
           else seen[dk] = rowNo;
         }
@@ -957,7 +957,7 @@ window.DataService = (function () {
     const now = nowISO();
     const instruments = clone(state.instruments);
     const byKey = Object.fromEntries(instruments.map(i => [instKey(i.symbol, i.exchange), i]));
-    const accounts = [], accByName = {}, holdings = [];
+    const accounts = [], accByKey = {}, holdings = [];
     v.rows.forEach(r => {
       const k = instKey(r.symbol, r.exchange);
       let inst = byKey[k];
@@ -966,20 +966,23 @@ window.DataService = (function () {
         instruments.push(inst);
         byKey[k] = inst;
       }
-      let acc = accByName[r.account];
+      // 계좌 = 계좌명 + 증권사
+      const ak = r.account + '|' + r.broker, brokerId = (state.brokers.find(b => b.name === r.broker) || {}).id || null;
+      const same = x => x.account === r.account && x.broker === r.broker;
+      let acc = accByKey[ak];
       if (!acc) {
-        const old = state.accounts.find(a => a.name === r.account);
-        const fileType = v.rows.find(x => x.account === r.account && x.accType);
-        const fileMemo = v.rows.find(x => x.account === r.account && x.memo);
+        const old = state.accounts.find(a => a.name === r.account && a.broker_id === brokerId);
+        const fileType = v.rows.find(x => same(x) && x.accType);
+        const fileMemo = v.rows.find(x => same(x) && x.memo);
         acc = {
           id: old ? old.id : uid('acc'), user_id: USER, name: r.account,
-          broker_id: (state.brokers.find(b => b.name === r.broker) || {}).id || null,
+          broker_id: brokerId,
           account_type_id: fileType ? (state.accountTypes.find(t => t.name === fileType.accType) || {}).id || null : old ? old.account_type_id : null,
           memo: fileMemo ? fileMemo.memo : old ? old.memo || '' : '',
           created_at: old ? old.created_at : now, updated_at: now
         };
         accounts.push(acc);
-        accByName[r.account] = acc;
+        accByKey[ak] = acc;
       }
       holdings.push({
         id: uid('h'), user_id: USER, account_id: acc.id, instrument_id: inst.id,
