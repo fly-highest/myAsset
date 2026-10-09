@@ -19,7 +19,9 @@ window.DataService = (function () {
 
   function seed() {
     return {
-      version: 1,
+      version: 2,
+      brokers: clone(MOCK.brokers), // 증권 마스터: 증권사
+      accountTypes: clone(MOCK.accountTypes), // 증권 마스터: 계좌종류
       accounts: clone(MOCK.accounts),
       instruments: clone(MOCK.instruments),
       holdings: clone(MOCK.holdings),
@@ -27,11 +29,33 @@ window.DataService = (function () {
       meta: { baseDate: Fmt.todayKST(), baseSource: 'Mock 초기 데이터', changedSinceSnapshot: false, importBackup: null }
     };
   }
+  // 예전(version 1) 저장 데이터 → version 2: 계좌의 증권사 이름을 증권 마스터 id 로 바꾸고 계좌종류·비고 칸 추가
+  function migrate(s) {
+    if (s.version === 1) {
+      s.brokers = clone(MOCK.brokers);
+      s.accountTypes = clone(MOCK.accountTypes);
+      const fix = list => (list || []).forEach(a => {
+        if (a.broker_id === undefined) {
+          let b = s.brokers.find(x => x.name === a.broker);
+          if (!b && a.broker) { b = { id: uid('brk'), name: a.broker, sort: 90 }; s.brokers.push(b); }
+          a.broker_id = b ? b.id : null;
+          const m = MOCK.accounts.find(x => x.id === a.id);
+          a.account_type_id = m ? m.account_type_id : null;
+          a.memo = m ? m.memo : '';
+          delete a.broker;
+        }
+      });
+      fix(s.accounts);
+      if (s.meta && s.meta.importBackup) fix(s.meta.importBackup.accounts);
+      s.version = 2;
+    }
+    return s.version === 2 ? s : null;
+  }
   function load() {
     state = null;
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) { const s = JSON.parse(raw); if (s && s.version === 1) state = s; }
+      if (raw) state = migrate(JSON.parse(raw));
     } catch (e) { /* 저장소를 못 쓰면 초기 Mock 으로 동작 */ }
     if (!state) state = seed();
   }
@@ -57,27 +81,73 @@ window.DataService = (function () {
   async function getFxRate() { return { ...MOCK.fx }; }
 
   // ---------------------------------------------------------------
-  // 계좌
+  // 증권 마스터 (증권사 · 계좌종류) — 계좌는 여기 등록된 값만 선택합니다
   // ---------------------------------------------------------------
-  async function getAccounts() { return clone(state.accounts); }
+  const MASTER = {
+    broker: { list: () => state.brokers, set: v => (state.brokers = v), field: 'broker_id', label: '증권사', prefix: 'brk' },
+    accountType: { list: () => state.accountTypes, set: v => (state.accountTypes = v), field: 'account_type_id', label: '계좌종류', prefix: 'atp' }
+  };
+  const bySort = list => list.slice().sort((a, b) => (a.sort ?? 50) - (b.sort ?? 50) || a.name.localeCompare(b.name, 'ko'));
+  async function getBrokers() { return clone(bySort(state.brokers)); }
+  async function getAccountTypes() { return clone(bySort(state.accountTypes)); }
+  function masterCheckName(kind, name, exceptId) {
+    const m = MASTER[kind];
+    name = String(name || '').trim();
+    if (!name) throw fail(`${m.label} 이름을 입력해 주세요.`);
+    if (m.list().some(x => x.id !== exceptId && x.name === name)) throw fail(`같은 이름의 ${m.label}가 이미 있습니다.`);
+    return name;
+  }
+  async function addMaster(kind, name) {
+    const m = MASTER[kind];
+    const item = { id: uid(m.prefix), name: masterCheckName(kind, name), sort: Math.max(0, ...m.list().filter(x => x.sort < 99).map(x => x.sort || 0)) + 1 };
+    m.list().push(item);
+    commit();
+    return clone(item);
+  }
+  // 이름 수정 → 그 값을 쓰는 모든 계좌에 바로 반영 (계좌는 id 로 연결)
+  async function updateMaster(kind, id, name) {
+    const item = MASTER[kind].list().find(x => x.id === id);
+    if (!item) throw fail('항목을 찾을 수 없습니다.');
+    item.name = masterCheckName(kind, name, id);
+    commit();
+    return clone(item);
+  }
+  async function deleteMaster(kind, id) {
+    const m = MASTER[kind];
+    const used = state.accounts.filter(a => a[m.field] === id);
+    if (used.length) throw fail(`이 ${m.label}를 쓰는 계좌가 ${used.length}개 있어 삭제할 수 없습니다: ${used.map(a => a.name).join(', ')}`, 'IN_USE');
+    m.set(m.list().filter(x => x.id !== id));
+    commit();
+  }
+  const brokerName = id => (state.brokers.find(b => b.id === id) || {}).name || '';
+  const typeName = id => (state.accountTypes.find(t => t.id === id) || {}).name || '';
+
+  // ---------------------------------------------------------------
+  // 계좌 (증권사·계좌종류는 증권 마스터 id, memo = 비고)
+  // ---------------------------------------------------------------
+  // 화면 편의를 위해 broker(증권사 이름)·account_type(계좌종류 이름)을 함께 돌려줍니다.
+  const withNames = a => ({ ...clone(a), broker: brokerName(a.broker_id), account_type: typeName(a.account_type_id) });
+  async function getAccounts() { return state.accounts.map(withNames); }
+  function normalizeAccount(a, exceptId) {
+    const name = String(a.name || '').trim();
+    if (!name) throw fail('계좌명을 입력해 주세요.');
+    if (!state.brokers.some(b => b.id === a.broker_id)) throw fail('증권사를 선택해 주세요.');
+    if (a.account_type_id && !state.accountTypes.some(t => t.id === a.account_type_id)) throw fail('계좌종류를 다시 선택해 주세요.');
+    if (state.accounts.some(x => x.id !== exceptId && x.name === name)) throw fail('같은 이름의 계좌가 이미 있습니다.');
+    return { name, broker_id: a.broker_id, account_type_id: a.account_type_id || null, memo: String(a.memo || '').trim() };
+  }
   async function addAccount(a) {
-    const name = String(a.name || '').trim(), broker = String(a.broker || '').trim();
-    if (!name || !broker) throw fail('계좌명과 증권사를 입력해 주세요.');
-    if (state.accounts.some(x => x.name === name)) throw fail('같은 이름의 계좌가 이미 있습니다.');
-    const acc = { id: uid('acc'), user_id: USER, name, broker, created_at: nowISO(), updated_at: nowISO() };
+    const acc = { id: uid('acc'), user_id: USER, ...normalizeAccount(a), created_at: nowISO(), updated_at: nowISO() };
     state.accounts.push(acc);
     markChanged(true); commit();
-    return clone(acc);
+    return withNames(acc);
   }
   async function updateAccount(id, a) {
     const acc = state.accounts.find(x => x.id === id);
     if (!acc) throw fail('계좌를 찾을 수 없습니다.');
-    const name = String(a.name || '').trim(), broker = String(a.broker || '').trim();
-    if (!name || !broker) throw fail('계좌명과 증권사를 입력해 주세요.');
-    if (state.accounts.some(x => x.id !== id && x.name === name)) throw fail('같은 이름의 계좌가 이미 있습니다.');
-    Object.assign(acc, { name, broker, updated_at: nowISO() });
+    Object.assign(acc, normalizeAccount(a, id), { updated_at: nowISO() });
     markChanged(true); commit();
-    return clone(acc);
+    return withNames(acc);
   }
   async function deleteAccount(id) {
     if (state.holdings.some(h => h.account_id === id)) throw fail('보유 종목을 먼저 정리해 주세요.', 'HAS_HOLDINGS');
@@ -350,7 +420,8 @@ window.DataService = (function () {
   // XLSX 업로드 / 다운로드 (SheetJS, 브라우저에서만 처리 — 서버 전송 없음)
   // ---------------------------------------------------------------
   const HEADERS = MOCK.xlsxSamples.headers;
-  const REQUIRED_HEADERS = HEADERS.filter(h => h !== '자산유형' && h !== '자산군');
+  const OPTIONAL_HEADERS = ['자산유형', '자산군', '계좌종류', '비고'];
+  const REQUIRED_HEADERS = HEADERS.filter(h => !OPTIONAL_HEADERS.includes(h));
   const pad = n => String(n).padStart(2, '0');
 
   function cleanNum(v) {
@@ -483,11 +554,15 @@ window.DataService = (function () {
         }
       }
 
-      const acc = s('계좌명'), broker = s('증권사');
+      const acc = s('계좌명'), broker = s('증권사'), accType = s('계좌종류'), memo = s('비고');
+      if (broker && !state.brokers.some(b => b.name === broker)) err('증권사', '증권 마스터에 없는 증권사입니다 (계좌 관리 › 증권 마스터 수정에서 먼저 등록)');
+      if (accType && !state.accountTypes.some(t => t.name === accType)) err('계좌종류', '증권 마스터에 없는 계좌종류입니다 (계좌 관리 › 증권 마스터 수정에서 먼저 등록)');
       if (acc && broker) {
         const b = brokerByAcc[acc];
         if (b && b.broker !== broker) err('증권사', `같은 계좌명(${acc})에 증권사가 다릅니다 (${b.row}행: ${b.broker})`);
-        else if (!b) brokerByAcc[acc] = { broker, row: rowNo };
+        else if (b && accType && b.accType && b.accType !== accType) err('계좌종류', `같은 계좌명(${acc})에 계좌종류가 다릅니다 (${b.row}행: ${b.accType})`);
+        else if (!b) brokerByAcc[acc] = { broker, accType, row: rowNo };
+        else if (!b.accType && accType) b.accType = accType;
       }
       if (acc && symbol && exchange) {
         const dk = acc + '|' + key;
@@ -495,7 +570,7 @@ window.DataService = (function () {
         else seen[dk] = rowNo;
       }
       rows.push({
-        rowNo, account: acc, broker, name: s('종목명'), symbol, exchange,
+        rowNo, account: acc, broker, accType, memo, name: s('종목명'), symbol, exchange,
         asset_type: existing ? existing.asset_type : assetType,
         currency: existing ? existing.currency : currency,
         quantity: q, avg_price: isCash ? 1 : ap, avg_fx_rate: currency === 'USD' ? fxv : 1,
@@ -521,7 +596,15 @@ window.DataService = (function () {
       let acc = accByName[r.account];
       if (!acc) {
         const old = state.accounts.find(a => a.name === r.account);
-        acc = { id: old ? old.id : uid('acc'), user_id: USER, name: r.account, broker: r.broker, created_at: old ? old.created_at : now, updated_at: now };
+        const fileType = v.rows.find(x => x.account === r.account && x.accType);
+        const fileMemo = v.rows.find(x => x.account === r.account && x.memo);
+        acc = {
+          id: old ? old.id : uid('acc'), user_id: USER, name: r.account,
+          broker_id: (state.brokers.find(b => b.name === r.broker) || {}).id || null,
+          account_type_id: fileType ? (state.accountTypes.find(t => t.name === fileType.accType) || {}).id || null : old ? old.account_type_id : null,
+          memo: fileMemo ? fileMemo.memo : old ? old.memo || '' : '',
+          created_at: old ? old.created_at : now, updated_at: now
+        };
         accounts.push(acc);
         accByName[r.account] = acc;
       }
@@ -538,7 +621,8 @@ window.DataService = (function () {
     const s = buildImportState(v);
     const prices = await getPrices();
     const fx = (await getFxRate()).rate;
-    return { ...s, baseDate: v.baseDate, fx, model: Calc.buildModel({ ...s, prices, fx }) };
+    const accounts = s.accounts.map(withNames); // 미리보기 표에 증권사·계좌종류 이름 표시
+    return { ...s, accounts, baseDate: v.baseDate, fx, model: Calc.buildModel({ ...s, accounts, prices, fx }) };
   }
   // 현재 계좌·보유 전체를 파일 내용으로 교체 (전부 반영 또는 전부 취소)
   async function replaceCurrentHoldings(v) {
@@ -571,7 +655,7 @@ window.DataService = (function () {
     info['B1'] = { t: 's', v: baseDate };
     info['!cols'] = [{ wch: 12 }, { wch: 60 }];
     const hs = XLSX.utils.aoa_to_sheet([HEADERS, ...rows]);
-    hs['!cols'] = [14, 12, 28, 12, 9, 9, 6, 14, 14, 12, 10].map(w => ({ wch: w }));
+    hs['!cols'] = [14, 12, 28, 12, 9, 9, 6, 14, 14, 12, 10, 12, 30].map(w => ({ wch: w }));
     const guide = XLSX.utils.aoa_to_sheet(MOCK.xlsxSamples.guide);
     guide['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 90 }];
     XLSX.utils.book_append_sheet(wb, info, '기준정보');
@@ -585,8 +669,9 @@ window.DataService = (function () {
     state.accounts.forEach(acc => {
       state.holdings.filter(h => h.account_id === acc.id).forEach(h => {
         const inst = instMap[h.instrument_id];
-        rows.push([acc.name, acc.broker, inst.name, inst.symbol, inst.exchange, inst.asset_type, inst.currency,
-          h.quantity, h.avg_price, inst.currency === 'USD' ? h.avg_fx_rate : '', inst.asset_group ? Groups.name(inst.asset_group) : '']);
+        rows.push([acc.name, brokerName(acc.broker_id), inst.name, inst.symbol, inst.exchange, inst.asset_type, inst.currency,
+          h.quantity, h.avg_price, inst.currency === 'USD' ? h.avg_fx_rate : '', inst.asset_group ? Groups.name(inst.asset_group) : '',
+          typeName(acc.account_type_id), acc.memo || '']);
       });
     });
     return rows;
@@ -618,6 +703,7 @@ window.DataService = (function () {
   return {
     onChange, resetMock, getStatus,
     getAccounts, addAccount, updateAccount, deleteAccount,
+    getBrokers, getAccountTypes, addMaster, updateMaster, deleteMaster,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument,
     getHoldings, addHolding, updateHolding, deleteHolding,

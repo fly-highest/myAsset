@@ -7,7 +7,7 @@
 
     const accRows = model.accounts.map(acc => {
       const v = Calc.view(acc.agg, mode, model.fx);
-      return `<tr><td><a href="accounts.html#${encodeURIComponent(acc.id)}">${esc(acc.name)}</a> <span class="muted small">${esc(acc.broker)}</span></td>
+      return `<tr><td><a href="accounts.html#${encodeURIComponent(acc.id)}">${esc(acc.name)}</a>${acc.account.account_type ? ` <span class="tag acc-type">${esc(acc.account.account_type)}</span>` : ''} <span class="muted small">${esc(acc.broker)}</span>${acc.account.memo ? `<div class="acc-memo">${esc(acc.account.memo)}</div>` : ''}</td>
         <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.prof(v, { split: false })}</td><td class="num">${UI.ret(v)}</td>
         <td class="num">${UI.weight(UI.w(acc.agg.valK, total))}</td></tr>`;
     }).join('') || '<tr><td colspan="5" class="muted center">계좌가 없습니다</td></tr>';

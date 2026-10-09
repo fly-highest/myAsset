@@ -200,22 +200,104 @@
   }
 
   // ---------------- 계좌 추가/수정 ----------------
-  function accountForm(account) {
+  // 증권사·계좌종류는 증권 마스터에 등록된 값 중에서 선택합니다. 비고는 자유롭게 입력.
+  async function accountForm(account) {
     const m = App.modal({
-      title: account ? '계좌 수정' : '계좌 추가',
+      title: account ? '계좌 수정' : '계좌 추가', size: 'mid',
       body: `<div class="form">
         <div class="field"><label>계좌명</label><input type="text" id="a-name" value="${esc(account ? account.name : '')}" placeholder="예: 키움 일반"></div>
-        <div class="field"><label>증권사</label><input type="text" id="a-broker" value="${esc(account ? account.broker : '')}" placeholder="예: 키움증권"></div>
+        <div class="row2">
+          <div class="field"><label>증권사</label><select id="a-broker"></select></div>
+          <div class="field"><label>계좌종류</label><select id="a-type"></select></div>
+        </div>
+        <div class="master-hint small muted">찾는 증권사·계좌종류가 없나요? <button type="button" class="btn btn-sm" id="a-master">증권 마스터 수정</button></div>
+        <div class="field"><label>비고</label><textarea id="a-memo" rows="3" maxlength="300" placeholder="예: 2025년 개설, 의무가입 3년 / 적립식 매수 계좌">${esc(account ? account.memo || '' : '')}</textarea>
+          <div class="hint">계좌 현황·계좌 관리·Dashboard 의 계좌 이름 아래에 표시됩니다.</div></div>
         <div class="notice" id="a-err" hidden></div></div>`,
       buttons: [{ label: '취소' }, {
         label: '저장', kind: 'primary', onClick: async api => {
-          const data = { name: api.body.querySelector('#a-name').value, broker: api.body.querySelector('#a-broker').value };
+          const b = api.body;
+          const data = { name: b.querySelector('#a-name').value, broker_id: b.querySelector('#a-broker').value, account_type_id: b.querySelector('#a-type').value, memo: b.querySelector('#a-memo').value };
           try {
             account ? await DataService.updateAccount(account.id, data) : await DataService.addAccount(data);
             api.close(); App.toast(account ? '계좌를 수정했습니다.' : '계좌를 추가했습니다.');
-          } catch (e) { const el = api.body.querySelector('#a-err'); el.hidden = false; el.textContent = e.message; }
+          } catch (e) { const el = b.querySelector('#a-err'); el.hidden = false; el.textContent = e.message; }
         }
       }]
+    });
+    // 선택 목록 채우기 (증권 마스터를 고친 뒤에도 다시 채움, 고르던 값은 유지)
+    async function fill(keepBroker, keepType) {
+      const [brokers, types] = await Promise.all([DataService.getBrokers(), DataService.getAccountTypes()]);
+      m.body.querySelector('#a-broker').innerHTML = '<option value="">증권사 선택</option>' +
+        brokers.map(x => `<option value="${esc(x.id)}" ${x.id === keepBroker ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+      m.body.querySelector('#a-type').innerHTML = '<option value="">계좌종류 선택 (선택 사항)</option>' +
+        types.map(x => `<option value="${esc(x.id)}" ${x.id === keepType ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+    }
+    await fill(account ? account.broker_id : '', account ? account.account_type_id : '');
+    m.body.querySelector('#a-master').onclick = async () => {
+      const kb = m.body.querySelector('#a-broker').value, kt = m.body.querySelector('#a-type').value;
+      await masterEditor();
+      fill(kb, kt);
+    };
+  }
+
+  // ---------------- 증권 마스터 수정 (증권사 · 계좌종류 신규/수정/삭제) ----------------
+  function masterEditor() {
+    return new Promise(resolve => {
+      const m = App.modal({ title: '증권 마스터 수정', size: 'mid', body: '', onClose: resolve, buttons: [{ label: '닫기', kind: 'primary' }] });
+      const KINDS = [['broker', '증권사'], ['accountType', '계좌종류']];
+      async function draw() {
+        const [brokers, types, accounts] = await Promise.all([DataService.getBrokers(), DataService.getAccountTypes(), DataService.getAccounts()]);
+        const lists = { broker: brokers, accountType: types };
+        const usedBy = (kind, id) => accounts.filter(a => (kind === 'broker' ? a.broker_id : a.account_type_id) === id).length;
+        m.body.innerHTML = `
+          <p class="small muted" style="margin-top:0">계좌의 증권사·계좌종류는 여기 등록된 이름 중에서 고릅니다. 이름을 고치면 그 값을 쓰는 모든 계좌에 바로 반영되고, 쓰고 있는 계좌가 있는 항목은 삭제할 수 없습니다.</p>
+          <div class="grid-2e">${KINDS.map(([kind, label]) => `
+            <div class="master-col">
+              <h3 class="sec-sub">${label} <span class="muted small">${lists[kind].length}개</span></h3>
+              <ul class="comp-list">${lists[kind].map(x => `
+                <li data-kind="${kind}" data-id="${esc(x.id)}">
+                  <span class="m-name">${esc(x.name)} ${usedBy(kind, x.id) ? `<span class="muted small">· ${usedBy(kind, x.id)}개 계좌</span>` : ''}</span>
+                  <span><button type="button" class="btn btn-sm" data-m-edit>수정</button><button type="button" class="btn btn-sm btn-ghost-danger" data-m-del>삭제</button></span>
+                </li>`).join('')}
+              </ul>
+              <div class="toolbar" style="margin-top:8px"><input type="text" data-new="${kind}" placeholder="새 ${label} 이름" style="flex:1;width:auto"><button type="button" class="btn btn-primary btn-sm" data-add="${kind}">추가</button></div>
+            </div>`).join('')}
+          </div>
+          <div class="notice" id="m-err" hidden></div>`;
+        const showErr = msg => { const el = m.body.querySelector('#m-err'); el.hidden = !msg; el.textContent = msg || ''; };
+        m.body.querySelectorAll('[data-add]').forEach(btn => {
+          const input = m.body.querySelector(`[data-new="${btn.dataset.add}"]`);
+          const add = async () => {
+            try { await DataService.addMaster(btn.dataset.add, input.value); App.toast(`'${input.value.trim()}' 추가`); draw(); }
+            catch (e) { showErr(e.message); }
+          };
+          btn.onclick = add;
+          input.onkeydown = e => { if (e.key === 'Enter') add(); };
+        });
+        m.body.querySelectorAll('li[data-kind]').forEach(li => {
+          const { kind, id } = li.dataset;
+          const item = lists[kind].find(x => x.id === id);
+          li.querySelector('[data-m-edit]').onclick = () => {
+            li.innerHTML = `<input type="text" value="${esc(item.name)}" style="flex:1"><span><button type="button" class="btn btn-sm btn-primary" data-ok>저장</button><button type="button" class="btn btn-sm" data-cancel>취소</button></span>`;
+            const input = li.querySelector('input');
+            input.focus(); input.select();
+            const save = async () => {
+              try { await DataService.updateMaster(kind, id, input.value); App.toast('이름을 수정했습니다. 이 값을 쓰는 계좌에 모두 반영됩니다.'); draw(); }
+              catch (e) { showErr(e.message); }
+            };
+            li.querySelector('[data-ok]').onclick = save;
+            li.querySelector('[data-cancel]').onclick = () => draw();
+            input.onkeydown = e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); draw(); } };
+          };
+          li.querySelector('[data-m-del]').onclick = async () => {
+            if (!(await App.confirm(`<b>${esc(item.name)}</b>을(를) 증권 마스터에서 삭제할까요?`, { okLabel: '삭제', danger: true }))) return;
+            try { await DataService.deleteMaster(kind, id); App.toast(`'${item.name}' 삭제`); draw(); }
+            catch (e) { showErr(e.message); }
+          };
+        });
+      }
+      draw();
     });
   }
 

@@ -282,3 +282,13 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .date-box .cal-btn:hover { color: var(--primary); }
 .date-box .date-pick { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
 .pick-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.tag.acc-type { color: #2453d6; background: #eaf0ff; }
+.acc-memo { font-size: 12px; color: var(--muted); font-weight: 400; margin: 2px 0 0 24px; white-space: normal; max-width: 420px; }
+.acc-memo::before { content: '비고 · '; color: #a0a7b4; }
+.tbl td .acc-memo { margin-left: 0; }
+.tree .acc-row .acc-memo { margin-left: 24px; }
+textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid #cfd5df; border-radius: 7px; resize: vertical; }
+textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
+.master-col .comp-list { max-height: 330px; overflow-y: auto; }
+.master-col .comp-list li { gap: 8px; }
+.master-col .comp-list li .btn + .btn { margin-left: 3px; }

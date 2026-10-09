@@ -114,8 +114,8 @@ window.UI = (function () {
       const rows = sortRows(acc.rows.filter(match));
       body += `<tr class="acc-row" data-acc="${esc(acc.key)}">
         <td colspan="3"><button type="button" class="tg" data-toggle-acc="${esc(acc.key)}" aria-label="접기/펼치기">${isCol ? '▸' : '▾'}</button>
-          <b>${esc(acc.name)}</b> <span class="muted">${esc(acc.broker || '')} · ${acc.rows.length}종목</span>${editable ? `
-          <button type="button" class="btn btn-sm btn-ghost" data-act="edit-account" data-id="${esc(acc.id)}">수정</button><button type="button" class="btn btn-sm btn-ghost btn-ghost-danger" data-act="delete-account" data-id="${esc(acc.id)}">삭제</button>` : ''}</td>
+          <b>${esc(acc.name)}</b>${acc.account && acc.account.account_type ? ` <span class="tag acc-type">${esc(acc.account.account_type)}</span>` : ''} <span class="muted">${esc(acc.broker || '')} · ${acc.rows.length}종목</span>${editable ? `
+          <button type="button" class="btn btn-sm btn-ghost" data-act="edit-account" data-id="${esc(acc.id)}">수정</button><button type="button" class="btn btn-sm btn-ghost btn-ghost-danger" data-act="delete-account" data-id="${esc(acc.id)}">삭제</button>` : ''}${acc.account && acc.account.memo ? `<div class="acc-memo" title="비고">${esc(acc.account.memo)}</div>` : ''}</td>
         <td colspan="4" class="muted small">계좌 소계</td>
         <td class="num">${amt(av, 'val')}</td><td class="num">${amt(av, 'inv')}</td><td class="num">${prof(av)}</td><td class="num">${ret(av, { split: true })}</td>
         <td class="num" title="전체 대비 비중">${weight(w(acc.agg.valK, total), false)}</td>

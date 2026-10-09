@@ -18,6 +18,7 @@
   <script>APP_CONFIG.STORAGE_KEY = 'myAsset.selftest'; try { localStorage.removeItem('myAsset.selftest'); } catch (e) {}</script>
   <script src="../js/format.js"></script>
   <script src="../js/calc.js"></script>
+  <script src="../mock/securityMaster.js"></script>
   <script src="../mock/accounts.js"></script>
   <script src="../mock/instruments.js"></script>
   <script src="../mock/holdings.js"></script>
@@ -181,6 +182,27 @@
           check(`mock/${name} ${expectErr ? '→ 오류 감지' : '→ 오류 없이 통과'}`, expectErr ? vv.errors.length > 0 : vv.errors.length === 0, `오류 ${vv.errors.length} / 경고 ${vv.warnings.length}, 기준일자 ${vv.baseDate}`);
         } catch (e) { check(`mock/${name} (파일을 읽을 수 없어 건너뜀)`, true, String(e.message || e)); }
       }
+
+      // 증권 마스터 (증권사·계좌종류) · 비고
+      const brokers0 = await DS.getBrokers();
+      const nb = await DS.addMaster('broker', '테스트증권');
+      let err2 = null;
+      try { await DS.addMaster('broker', '테스트증권'); } catch (e) { err2 = e; }
+      check('증권 마스터: 증권사 추가 / 같은 이름 중복 차단', (await DS.getBrokers()).length === brokers0.length + 1 && !!err2);
+      const isaType = (await DS.getAccountTypes()).find(t => t.name === 'ISA');
+      const na = await DS.addAccount({ name: '테스트 계좌', broker_id: nb.id, account_type_id: isaType.id, memo: '테스트 비고' });
+      check('계좌 추가: 증권사·계좌종류는 마스터 id 로 저장, 이름·비고 함께 조회', na.broker_id === nb.id && na.broker === '테스트증권' && na.account_type === 'ISA' && na.memo === '테스트 비고');
+      await DS.updateMaster('broker', nb.id, '테스트증권2');
+      check('증권사 이름 수정 → 그 증권사를 쓰는 계좌에 바로 반영', (await DS.getAccounts()).find(a => a.id === na.id).broker === '테스트증권2');
+      err2 = null;
+      try { await DS.deleteMaster('broker', nb.id); } catch (e) { err2 = e; }
+      check('사용 중인 증권사는 삭제 차단', err2 && err2.code === 'IN_USE', err2 && err2.message);
+      err2 = null;
+      try { await DS.addAccount({ name: '증권사 없는 계좌', broker_id: '', memo: '' }); } catch (e) { err2 = e; }
+      check('증권사를 고르지 않으면 계좌 추가 차단', !!err2, err2 && err2.message);
+      await DS.deleteAccount(na.id);
+      await DS.deleteMaster('broker', nb.id);
+      check('사용하지 않는 증권사는 삭제 가능', !(await DS.getBrokers()).some(b => b.id === nb.id));
 
       // 외부 종목 목록 검색·등록
       let found = await DS.searchCatalog('애플');
