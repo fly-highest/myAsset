@@ -250,3 +250,4 @@ footer.foot { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: va
 .hist .sticky-col { position: sticky; left: 0; background: #fff; z-index: 2; }
 .hist thead .sticky-col { background: #f8f9fb; z-index: 4; }
 .hist tbody tr:hover .sticky-col { background: #fafbfd; }
+.tbl th.center { text-align: center; }

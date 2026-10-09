@@ -22,10 +22,10 @@
     // 날짜별 자산 현황 표: 총합 + 자산군별 총액·비중 (최근 날짜가 위)
     const rows = snaps.map((s, i) => ({ s, m: models[i] })).reverse().map(({ s, m }) => {
       const v = Calc.view(m.total, mode, m.fx);
-      const groups = Groups.list.map(g => {
-        const a = m.groups[g.code].agg;
-        return `<td class="num g-first">${UI.amt(Calc.view(a, mode, m.fx), 'val')}</td><td class="num">${Fmt.weight(UI.w(a.valK, m.total.valK))}</td>`;
-      }).join('');
+      // 자산군별 총액 7칸 → 자산군별 비중 7칸 순서
+      const amounts = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${UI.amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val')}</td>`).join('');
+      const weights = Groups.list.map((g, i) => `<td class="num${i === 0 ? ' g-first' : ''}">${Fmt.weight(UI.w(m.groups[g.code].agg.valK, m.total.valK))}</td>`).join('');
+      const groups = amounts + weights;
       return `<tr>
         <td class="nowrap sticky-col">${s.snapshot_date} <span class="muted small">${s.snapshot_time}</span>${s.simulated ? ' <span class="tag">시뮬레이션</span>' : ''}</td>
         <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v, { split: false })}</td><td class="num">${UI.ret(v)}</td>
@@ -58,9 +58,10 @@
             <tr>
               <th rowspan="2" class="sticky-col">날짜</th><th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
               <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
-              ${Groups.list.map(g => `<th colspan="2" class="center g-first"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')}
+              <th colspan="${Groups.list.length}" class="center g-first">자산군별 총액</th>
+              <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">(원화 환산 기준)</span></th>
             </tr>
-            <tr>${Groups.list.map(() => '<th class="num g-first">총액</th><th class="num">비중</th>').join('')}</tr>
+            <tr>${[0, 1].map(() => Groups.list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
           </thead>
           <tbody>${rows || `<tr><td colspan="${6 + Groups.list.length * 2}" class="muted">스냅샷이 없습니다</td></tr>`}</tbody>
         </table></div>
