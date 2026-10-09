@@ -15,7 +15,7 @@
     model.rows.forEach(x => { heldCount[x.inst.id] = (heldCount[x.inst.id] || 0) + 1; });
 
     let content = '';
-    if (tab === 'composition') content = compositionTab(instruments, heldCount, await DataService.getCatalogInfo());
+    if (tab === 'composition') content = compositionTab(instruments, heldCount, await DataService.getCatalogInfo(), await DataService.getTargetPlans());
     else if (tab === 'accounts') content = accountsTab(model, mode);
     else content = uploadTab(status);
 
@@ -59,7 +59,7 @@
   }
 
   // ---------------- 자산 구성 관리 ----------------
-  function compositionTab(instruments, heldCount, cat) {
+  function compositionTab(instruments, heldCount, cat, plans) {
     const row = (i, assigned) => `<tr>
       <td class="nm">${esc(i.name)} <span class="muted small">${esc(i.eng_name || '')}</span></td>
       <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td>
@@ -73,12 +73,13 @@
       const list = instruments.filter(i => i.asset_group === g.code);
       return `<tbody>
         <tr class="g-row" id="comp-${g.code}"><td colspan="5"><span class="dot" style="background:${g.color}"></span>${g.name} <span class="muted small">${list.length}종목</span></td>
-          <td class="actions"><button type="button" class="btn btn-sm btn-primary" data-add-to="${g.code}">+ 종목 추가</button></td></tr>
+          <td class="actions"><button type="button" class="btn btn-sm" data-target-group="${g.code}" title="기준별 이 자산군의 목표 비중(%)을 수정합니다">목표 % 수정</button> <button type="button" class="btn btn-sm btn-primary" data-add-to="${g.code}">+ 종목 추가</button></td></tr>
         ${list.map(i => row(i, true)).join('') || '<tr><td colspan="6" class="muted">아직 종목이 없습니다</td></tr>'}
       </tbody>`;
     }).join('');
     const un = instruments.filter(i => !i.asset_group);
     return `
+      ${targetCard(plans)}
       <div class="card pad catalog-bar">
         <div><b>전체 상장 종목 목록</b> <span class="muted">${Fmt.plain(cat.count)}개 종목 · 마지막 갱신 ${cat.syncedAt ? Fmt.mdhm(cat.syncedAt) : '—'} · 다음 자동 갱신 ${Fmt.mdhm(cat.nextSyncAt)}</span>
           <div class="small muted">국내 주식(KRX KIND)·국내 ETF(네이버)·미국 주식·ETF(NASDAQ 공개 파일)·업비트 코인 목록을 매월 1일 받아 DB에 저장하고, [종목 추가] 검색은 이 목록을 조회합니다.</div></div>
@@ -118,6 +119,116 @@
       App.toast(`${inst.name} → ${Groups.name(sel.value)}`);
     });
     main.querySelectorAll('[data-add-to]').forEach(b => b.onclick = () => addToGroup(b.dataset.addTo));
+    bindTargets(main);
+  }
+
+  // ---------------- 목표 비중 (투자 화면에서 사용) ----------------
+  // 기준(예: 200일선 +1% 이상)마다 자산군별 목표 %. 기준 행의 [수정]으로 이름·전체 %를, 자산군 행의 [목표 % 수정]으로 그 자산군만 수정
+  function targetCard(plans) {
+    const head = Groups.list.map(g => `<th class="num"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('');
+    const rows = plans.map(p => `<tr>
+      <td class="nm">${esc(p.name)}</td>
+      ${Groups.list.map(g => `<td class="num">${Fmt.weight(p.weights[g.code] || 0)}</td>`).join('')}
+      <td class="num ${p.sum !== 100 ? 'warn-text' : ''}"><b>${Fmt.weight(p.sum)}</b>${p.sum !== 100 ? '<div class="sub">100%가 아님</div>' : ''}</td>
+      <td class="actions"><button type="button" class="btn btn-sm" data-plan-edit="${esc(p.id)}">수정</button><button type="button" class="btn btn-sm btn-ghost-danger" data-plan-del="${esc(p.id)}">삭제</button></td>
+    </tr>`).join('') || `<tr><td colspan="${Groups.list.length + 3}" class="muted">기준이 없습니다. [+ 기준 추가]로 만들어 주세요.</td></tr>`;
+    return `
+      <div class="sec-hd" style="margin-top:0"><h2>목표 비중</h2>
+        <div class="toolbar"><span class="small muted">투자 화면에서 기준별 목표 금액과 매수·매도 필요 금액을 계산합니다</span>
+          <button type="button" class="btn btn-sm btn-primary" id="plan-add">+ 기준 추가</button>
+          <button type="button" class="btn btn-sm btn-ghost" id="plan-reset" title="처음 기본값으로 되돌립니다">기본값으로</button></div></div>
+      <div class="tbl-wrap" style="margin-bottom:18px"><table class="tbl">
+        <thead><tr><th>기준</th>${head}<th class="num">합계</th><th>관리</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+  function bindTargets(main) {
+    main.querySelector('#plan-add').onclick = () => planForm(null);
+    main.querySelector('#plan-reset').onclick = async () => {
+      if (!(await App.confirm('목표 비중을 처음 기본값(200일선 +1% 이상 / −1% 이하)으로 되돌릴까요?', { okLabel: '되돌리기', danger: true }))) return;
+      await DataService.resetTargetPlans();
+      App.toast('목표 비중을 기본값으로 되돌렸습니다.');
+    };
+    main.querySelectorAll('[data-plan-edit]').forEach(b => b.onclick = async () => {
+      const plan = (await DataService.getTargetPlans()).find(p => p.id === b.dataset.planEdit);
+      planForm(plan);
+    });
+    main.querySelectorAll('[data-plan-del]').forEach(b => b.onclick = async () => {
+      const plan = (await DataService.getTargetPlans()).find(p => p.id === b.dataset.planDel);
+      if (!(await App.confirm(`<b>${esc(plan.name)}</b> 기준을 삭제할까요?`, { okLabel: '삭제', danger: true }))) return;
+      await DataService.deleteTargetPlan(plan.id);
+      App.toast('기준을 삭제했습니다.');
+    });
+    main.querySelectorAll('[data-target-group]').forEach(b => b.onclick = () => groupTargetForm(b.dataset.targetGroup));
+  }
+  // 합계 표시 (입력할 때마다 갱신)
+  const sumLine = inputs => {
+    const s = Math.round([...inputs].reduce((a, el) => a + (Number(el.value) || 0), 0) * 100) / 100;
+    return `합계 <b class="${s === 100 ? '' : 'warn-text'}">${Fmt.weight(s)}</b>${s === 100 ? '' : ' — 100%가 되도록 맞추는 것을 권장합니다'}`;
+  };
+  // 기준 추가·수정: 이름 + 7개 자산군 목표 %
+  function planForm(plan) {
+    const w = plan ? plan.weights : {};
+    App.modal({
+      title: plan ? '기준 수정' : '기준 추가', size: 'mid',
+      body: `<div class="form">
+        <div class="field"><label>기준 이름</label><input type="text" id="p-name" value="${esc(plan ? plan.name : '')}" placeholder="예: 200일선 +1% 이상"></div>
+        <div class="target-grid">${Groups.list.map(g => `
+          <div class="field"><label><span class="dot" style="background:${g.color}"></span>${g.name}</label>
+            <div class="input-unit"><input type="number" step="any" min="0" max="100" data-w="${g.code}" value="${w[g.code] ?? 0}"><span>%</span></div></div>`).join('')}
+        </div>
+        <div class="small" id="p-sum"></div>
+        <div class="notice" id="p-err" hidden></div></div>`,
+      buttons: [{ label: '취소' }, {
+        label: '저장', kind: 'primary', onClick: async api => {
+          const weights = {};
+          api.body.querySelectorAll('[data-w]').forEach(el => { weights[el.dataset.w] = el.value; });
+          try {
+            await DataService.saveTargetPlan({ id: plan && plan.id, name: api.body.querySelector('#p-name').value, weights });
+            api.close(); App.toast('목표 비중을 저장했습니다.');
+          } catch (e) { const el = api.body.querySelector('#p-err'); el.hidden = false; el.textContent = e.message; }
+        }
+      }]
+    });
+    const body = document.querySelector('.modal-backdrop:last-child .modal-bd');
+    const inputs = body.querySelectorAll('[data-w]');
+    const upd = () => { body.querySelector('#p-sum').innerHTML = sumLine(inputs); };
+    inputs.forEach(el => el.addEventListener('input', upd));
+    upd();
+  }
+  // 자산군 하나의 목표 %를 기준별로 수정
+  async function groupTargetForm(code) {
+    const plans = await DataService.getTargetPlans();
+    if (!plans.length) { App.alert('먼저 [+ 기준 추가]로 기준을 만들어 주세요.'); return; }
+    App.modal({
+      title: `${Groups.name(code)} 목표 비중 수정`,
+      body: `<div class="form">
+        <p class="small muted" style="margin:0">기준별로 ${Groups.name(code)}의 목표 비중(%)을 입력하세요. 오른쪽은 그 기준의 다른 자산군을 합친 값입니다.</p>
+        ${plans.map(p => {
+          const others = Math.round((p.sum - (p.weights[code] || 0)) * 100) / 100;
+          return `<div class="field"><label>${esc(p.name)}</label>
+            <div class="toolbar"><div class="input-unit" style="width:140px"><input type="number" step="any" min="0" max="100" data-plan="${esc(p.id)}" data-others="${others}" value="${p.weights[code] || 0}"><span>%</span></div>
+            <span class="small muted" data-sum-for="${esc(p.id)}"></span></div></div>`;
+        }).join('')}
+        <div class="notice" id="g-err" hidden></div></div>`,
+      buttons: [{ label: '취소' }, {
+        label: '저장', kind: 'primary', onClick: async api => {
+          const values = {};
+          api.body.querySelectorAll('[data-plan]').forEach(el => { values[el.dataset.plan] = el.value; });
+          try { await DataService.setGroupTargets(code, values); api.close(); App.toast(`${Groups.name(code)} 목표 비중을 저장했습니다.`); }
+          catch (e) { const el = api.body.querySelector('#g-err'); el.hidden = false; el.textContent = e.message; }
+        }
+      }]
+    });
+    const body = document.querySelector('.modal-backdrop:last-child .modal-bd');
+    body.querySelectorAll('[data-plan]').forEach(el => {
+      const upd = () => {
+        const s = Math.round(((Number(el.value) || 0) + Number(el.dataset.others)) * 100) / 100;
+        body.querySelector(`[data-sum-for="${el.dataset.plan}"]`).innerHTML = `이 기준 합계 <b class="${s === 100 ? '' : 'warn-text'}">${Fmt.weight(s)}</b>`;
+      };
+      el.addEventListener('input', upd);
+      upd();
+    });
   }
 
   async function addToGroup(code) {

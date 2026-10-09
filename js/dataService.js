@@ -17,6 +17,12 @@ window.DataService = (function () {
   let state = null;
   const listeners = [];
 
+  // 투자 목표 비중 기본값 (기준별 자산군 목표 %, 합계 100). 화면: 계좌/자산관리 › 자산 구성 관리 › 목표 비중
+  const DEFAULT_TARGETS = [
+    { id: 'tgt-above', name: '200일선 +1% 이상', weights: { CASH: 49, LEVERAGE: 20, NASDAQ100: 20, SP500: 0, OTHER_STOCK: 0, GOLD: 10, BLOCKCHAIN: 1 } },
+    { id: 'tgt-below', name: '200일선 −1% 이하', weights: { CASH: 69, LEVERAGE: 0, NASDAQ100: 20, SP500: 0, OTHER_STOCK: 0, GOLD: 10, BLOCKCHAIN: 1 } }
+  ];
+
   function seed() {
     return {
       version: 2,
@@ -26,6 +32,7 @@ window.DataService = (function () {
       instruments: clone(MOCK.instruments),
       holdings: clone(MOCK.holdings),
       extraSnapshots: [], // [08:00 스냅샷 생성 시뮬레이션]으로 추가된 스냅샷
+      targets: clone(DEFAULT_TARGETS), // 투자 목표 비중 (기준별 자산군 목표 %)
       meta: { baseDate: Fmt.todayKST(), baseSource: 'Mock 초기 데이터', changedSinceSnapshot: false, importBackup: null }
     };
   }
@@ -58,6 +65,7 @@ window.DataService = (function () {
       if (raw) state = migrate(JSON.parse(raw));
     } catch (e) { /* 저장소를 못 쓰면 초기 Mock 으로 동작 */ }
     if (!state) state = seed();
+    if (!state.targets) state.targets = clone(DEFAULT_TARGETS); // 예전 저장 데이터에는 목표 비중이 없음
   }
   function commit() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('Mock 저장 실패', e); }
@@ -226,6 +234,52 @@ window.DataService = (function () {
     markChanged(true); commit();
     return withNames(acc);
   }
+  // ---------------------------------------------------------------
+  // 투자 목표 비중 (기준 = 예: '200일선 +1% 이상', 기준마다 자산군별 목표 %)
+  // ---------------------------------------------------------------
+  const sumWeights = w => Groups.codes.reduce((s, c) => s + (Number(w[c]) || 0), 0);
+  function normalizeWeights(w) {
+    const out = {};
+    Groups.codes.forEach(c => {
+      const v = Number(w && w[c] !== '' && w[c] != null ? w[c] : 0);
+      if (!(v >= 0 && v <= 100)) throw fail(`${Groups.name(c)} 목표 비중은 0~100 사이 숫자여야 합니다.`);
+      out[c] = Math.round(v * 100) / 100;
+    });
+    return out;
+  }
+  async function getTargetPlans() {
+    return clone(state.targets).map(p => ({ ...p, sum: Math.round(sumWeights(p.weights) * 100) / 100 }));
+  }
+  // 기준 추가·수정 (이름 + 자산군별 목표 %)
+  async function saveTargetPlan(plan) {
+    const name = String(plan.name || '').trim();
+    if (!name) throw fail('기준 이름을 입력해 주세요.');
+    if (state.targets.some(p => p.id !== plan.id && p.name === name)) throw fail('같은 이름의 기준이 이미 있습니다.');
+    const weights = normalizeWeights(plan.weights);
+    const old = state.targets.find(p => p.id === plan.id);
+    if (old) Object.assign(old, { name, weights });
+    else state.targets.push({ id: uid('tgt'), name, weights });
+    commit();
+  }
+  // 한 자산군의 목표 %를 기준별로 한 번에 수정: values = { 기준id: % }
+  async function setGroupTargets(code, values) {
+    if (!Groups.codes.includes(code)) throw fail('알 수 없는 자산군입니다.');
+    const next = state.targets.map(p => {
+      const v = values[p.id];
+      return v === undefined ? p : { ...p, weights: normalizeWeights({ ...p.weights, [code]: v }) };
+    });
+    state.targets = next;
+    commit();
+  }
+  async function deleteTargetPlan(id) {
+    state.targets = state.targets.filter(p => p.id !== id);
+    commit();
+  }
+  async function resetTargetPlans() {
+    state.targets = clone(DEFAULT_TARGETS);
+    commit();
+  }
+
   async function deleteAccount(id) {
     if (state.holdings.some(h => h.account_id === id)) throw fail('보유 종목을 먼저 정리해 주세요.', 'HAS_HOLDINGS');
     state.accounts = state.accounts.filter(x => x.id !== id);
@@ -987,6 +1041,7 @@ window.DataService = (function () {
   return {
     onChange, resetMock, getStatus,
     getAccounts, addAccount, updateAccount, deleteAccount,
+    getTargetPlans, saveTargetPlan, setGroupTargets, deleteTargetPlan, resetTargetPlans,
     getBrokers, getAccountTypes, addMaster, updateMaster, deleteMaster,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
