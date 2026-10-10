@@ -14,9 +14,10 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } });
 const UA = { 'User-Agent': 'Mozilla/5.0' };
 const SERIES = [
-  { pair: 'DXY', google: 'INDEXDXY:DXY', yahoo: 'DX-Y.NYB' },
-  { pair: 'WTI', google: 'NYMEX:CLW00', yahoo: 'CL=F' },
-  { pair: 'BRENT', google: 'NYMEX:BZW00', yahoo: 'BZ=F' },
+  // 달러 인덱스 · WTI · 브렌트유: GOOGLEFINANCE 가 값을 주지 않음 (2026-10-10, 시트로 20회 확인) → Yahoo 만 사용
+  { pair: 'DXY', google: null, yahoo: 'DX-Y.NYB' },
+  { pair: 'WTI', google: null, yahoo: 'CL=F' },
+  { pair: 'BRENT', google: null, yahoo: 'BZ=F' },
   { pair: 'QQQ', google: 'NASDAQ:QQQ', yahoo: 'QQQ' },
   { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' }
 ];
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
       let bars: Bar[] = [], yErr = '';
       try { bars = await fromYahoo(s.yahoo); } catch (e) { yErr = (e as Error).message; }
       // Google 값 = 오늘(가장 최근 거래일) 종가. 날짜는 Yahoo 의 최근 거래일, Yahoo 가 없으면 뉴욕 날짜(평일·장 시작 후)
-      const gv = g.get(s.google);
+      const gv = s.google ? g.get(s.google) : undefined;
       if (gv) {
         const d = bars.length ? bars[bars.length - 1].date : (weekday(ny.date) && ny.afterOpen ? ny.date : null);
         if (d) {
