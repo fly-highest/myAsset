@@ -1,4 +1,4 @@
-// 시장 지표 (market.html) — QQQ · SPY · GLD · 비트코인 · USD/KRW 환율 · 달러 인덱스 · WTI/브렌트유
+// 시장 지표 (market.html) — QQQ · SPY · GLD · 비트코인 · VIX · USD/KRW 환율 · 달러 인덱스 · WTI/브렌트유
 // 일별 종가는 DB fx_daily (과거 = 업로드한 CSV, 이후 = 매시 15분 자동 추가: Google Finance 우선, 안 되면 Yahoo)
 // - 위쪽 기간 버튼(1주~5년): 차트에 보이는 구간 + 환율·달러 인덱스·유가의 '기간 평균' 칸
 // - 차트마다 이동평균 체크박스: 5일 · 20일 · 50일 · 120일 · 200일 (자료 개수 기준) · 1년 · 3년 · 5년 (날짜 기준), QQQ 는 200일 ±1% 추가
@@ -23,6 +23,9 @@
     // 비트코인은 주말에도 거래 → 매일 저장, n일선도 달력 날짜 기준
     { id: 'btc', sma: true, everyDay: true, title: '비트코인 (BTC/USD)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'BTC', label: 'BTC', color: PRICE }] },
+    // VIX: 미국 S&P500 옵션으로 계산한 '공포 지수' (변동성). 단위 없음 — 위쪽 칸은 현재 · 기간 평균
+    { id: 'vix', title: 'VIX (CBOE 변동성 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['n50', 'n200'],
+      series: [{ pair: 'VIX', label: 'VIX', color: PRICE }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: PRICE, live: true }] },
     { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
@@ -73,7 +76,7 @@
     if (!el) return;
     const p = FX_PERIODS.find(x => x[0] === fxPeriod);
     el.innerHTML = `
-      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· QQQ · SPY · GLD · 비트코인 · 환율 · 달러 인덱스 · 유가</span></h2>
+      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· QQQ · SPY · GLD · 비트코인 · VIX · 환율 · 달러 인덱스 · 유가</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${FX_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
