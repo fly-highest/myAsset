@@ -103,10 +103,10 @@
   const dec2 = v => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fx2 = v => '₩' + dec2(v);
   const MARKETS = [
-    // QQQ · SPY: 이동평균은 기간 버튼과 관계없이 50일·200일(거래일) + 200일 ±1% 점선
+    // QQQ · SPY: 이동평균은 기간 버튼과 관계없이 50일·200일(거래일). QQQ 만 200일 ±1% 점선 (band: false = 점선 없음)
     { id: 'qqq', sma: true, title: 'QQQ (나스닥100 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'QQQ', label: 'QQQ', color: '#2457d6' }] },
-    { id: 'spy', sma: true, title: 'SPY (S&P500 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
+    { id: 'spy', sma: true, band: false, title: 'SPY (S&P500 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'SPY', label: 'SPY', color: '#17a589' }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: '#2457d6', live: true }] },
@@ -187,7 +187,7 @@
           <div class="stat-sub">${zone}</div></div>
       </div>
       <div class="chart-box" style="height:280px"><canvas id="ch-${m.id}"></canvas></div>
-      <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, 평일마다 자동 추가) · 이동평균은 거래일 기준 50일·200일 (기간 버튼은 보이는 구간만 바꿈) · 점선 = 200일선 ±1%</p>`;
+      <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, 평일마다 자동 추가) · 이동평균은 거래일 기준 50일·200일 (기간 버튼은 보이는 구간만 바꿈) ${m.band === false ? '' : ' · 점선 = 200일선 ±1%'}</p>`;
     const labels = c.rows.map(r => r.date);
     if (!labels.length) return;
     const cut = arr => arr.slice(i0);
@@ -200,8 +200,8 @@
           { label: s.label, data: c.rows.map(r => r.close), borderColor: s.color, backgroundColor: s.color, borderWidth: 1.8, pointRadius: labels.length <= 31 ? 2 : 0, tension: 0.1 },
           { label: '50일선', data: cut(ma50), borderColor: '#ef7d22', borderWidth: 1.4, pointRadius: 0, tension: 0.1 },
           { label: '200일선', data: m200, borderColor: '#d9434f', borderWidth: 1.6, pointRadius: 0, tension: 0.1 },
-          { label: '200일선 +1%', data: m200.map(v => (v == null ? null : v * 1.01)), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1 },
-          { label: '200일선 −1%', data: m200.map(v => (v == null ? null : v * 0.99)), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1 }
+          ...(m.band === false ? [] : [{ label: '200일선 +1%', data: m200.map(v => (v == null ? null : v * 1.01)), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1 },
+          { label: '200일선 −1%', data: m200.map(v => (v == null ? null : v * 0.99)), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1 }])
         ]
       },
       options: {
