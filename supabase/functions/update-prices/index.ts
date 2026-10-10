@@ -79,7 +79,8 @@ Deno.serve(async (req) => {
 
   // 1) Google 시트가 읽어 갈 티커 목록
   if (url.searchParams.has('tickers')) {
-    const list = ['CURRENCY:USDKRW', 'CURRENCY:XAUUSD',
+    // 시장 지표 후보 (GOOGLEFINANCE 지원 여부 확인용): 달러 인덱스 · WTI · 브렌트유
+    const list = ['CURRENCY:USDKRW', 'CURRENCY:XAUUSD', 'INDEXDXY:DXY', 'NYMEX:CLW00', 'NYMEX:BZW00',
       ...targets.filter((t) => t.source === 'GOOGLE' && t.google_ticker).map((t) => t.google_ticker)];
     return new Response(list.join('\n'), { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
   }

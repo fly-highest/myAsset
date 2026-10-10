@@ -103,6 +103,11 @@
   const dec2 = v => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fx2 = v => '₩' + dec2(v);
   const MARKETS = [
+    // QQQ · SPY: 이동평균은 기간 버튼과 관계없이 50일·200일(거래일) + 200일 ±1% 점선
+    { id: 'qqq', sma: true, title: 'QQQ (나스닥100 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
+      series: [{ pair: 'QQQ', label: 'QQQ', color: '#2457d6' }] },
+    { id: 'spy', sma: true, title: 'SPY (S&P500 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
+      series: [{ pair: 'SPY', label: 'SPY', color: '#17a589' }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: '#2457d6', live: true }] },
     { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
@@ -116,7 +121,7 @@
     if (!el) return;
     const p = FX_PERIODS.find(x => x[0] === fxPeriod);
     el.innerHTML = `
-      <div class="sec-hd"><h2>시장 지표 <span class="muted small">· 환율 · 달러 인덱스 · 유가</span></h2>
+      <div class="sec-hd"><h2>시장 지표 <span class="muted small">· QQQ · SPY · 환율 · 달러 인덱스 · 유가</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${FX_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
@@ -152,7 +157,70 @@
     return { rows, maRows, avg, hi: rows.length ? Math.max(...rows.map(r => r.close)) : null, lo: rows.length ? Math.min(...rows.map(r => r.close)) : null };
   }
 
+  // 거래일 수 기준 단순 이동평균 (n일선). 앞쪽에 n일이 안 되는 날은 null
+  const smaN = (hist, n) => { let sum = 0; return hist.map((r, i) => { sum += r.close; if (i >= n) sum -= hist[i - n].close; return i >= n - 1 ? sum / n : null; }); };
+
+  // QQQ · SPY 영역: 현재가 · 50일선 · 200일선 · 현재 − 200일선 + 차트(종가, 50일선, 200일선, 200일선 ±1% 점선)
+  async function smaPanel(m, p) {
+    const s = m.series[0];
+    const hist = await DataService.getFxHistory(s.pair);
+    const box = document.getElementById('mkt-' + m.id);
+    if (!box) return;
+    if (!hist.length) { box.innerHTML = `<h3 class="sec-sub" style="margin-top:0">${m.title}</h3><div class="muted">데이터 없음</div>`; return; }
+    const SRC = { CSV: 'Investing.com', YAHOO: 'Yahoo Finance', GOOGLE: 'Google Finance' };
+    const ma50 = smaN(hist, 50), ma200 = smaN(hist, 200);
+    const L = hist.length - 1, last = hist[L];
+    const c = seriesCalc(hist, p); // 표시 기간만 사용
+    const i0 = hist.length - c.rows.length;
+    const pct = (a, b) => (a / b - 1) * 100;
+    const d200 = ma200[L] ? pct(last.close, ma200[L]) : null;
+    const zone = d200 == null ? '' : d200 >= 1 ? '200일선 +1% 이상' : d200 <= -1 ? '200일선 −1% 이하' : '200일선 ±1% 사이';
+    box.innerHTML = `<h3 class="sec-sub" style="margin-top:0">${m.title}</h3>
+      <div class="fx-stats four">
+        <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>현재</div><div class="stat-v">${m.fmt(last.close)}</div>
+          <div class="stat-sub">${last.date} 종가 · ${SRC[last.source] || last.source}</div></div>
+        <div><div class="stat-t">50일선</div><div class="stat-v">${ma50[L] ? m.fmt(ma50[L]) : '—'}</div>
+          <div class="stat-sub">${ma50[L] ? `현재 − 50일선 <span class="${Fmt.cls(pct(last.close, ma50[L]), 'PCT')}">${Fmt.pct(pct(last.close, ma50[L]))}</span>` : ''}</div></div>
+        <div><div class="stat-t">200일선</div><div class="stat-v">${ma200[L] ? m.fmt(ma200[L]) : '—'}</div>
+          <div class="stat-sub">${ma200[L] ? `+1% ${m.fmt(ma200[L] * 1.01)} / −1% ${m.fmt(ma200[L] * 0.99)}` : ''}</div></div>
+        <div><div class="stat-t">현재 − 200일선</div><div class="stat-v">${d200 == null ? '—' : `<span class="${Fmt.cls(d200, 'PCT')}">${Fmt.pct(d200)}</span>`}</div>
+          <div class="stat-sub">${zone}</div></div>
+      </div>
+      <div class="chart-box" style="height:280px"><canvas id="ch-${m.id}"></canvas></div>
+      <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, 평일마다 자동 추가) · 이동평균은 거래일 기준 50일·200일 (기간 버튼은 보이는 구간만 바꿈) · 점선 = 200일선 ±1%</p>`;
+    const labels = c.rows.map(r => r.date);
+    if (!labels.length) return;
+    const cut = arr => arr.slice(i0);
+    const m200 = cut(ma200);
+    UI.chart('ch-' + m.id, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: s.label, data: c.rows.map(r => r.close), borderColor: s.color, backgroundColor: s.color, borderWidth: 1.8, pointRadius: labels.length <= 31 ? 2 : 0, tension: 0.1 },
+          { label: '50일선', data: cut(ma50), borderColor: '#ef7d22', borderWidth: 1.4, pointRadius: 0, tension: 0.1 },
+          { label: '200일선', data: m200, borderColor: '#d9434f', borderWidth: 1.6, pointRadius: 0, tension: 0.1 },
+          { label: '200일선 +1%', data: m200.map(v => (v == null ? null : v * 1.01)), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1 },
+          { label: '200일선 −1%', data: m200.map(v => (v == null ? null : v * 0.99)), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2 } },
+          tooltip: { callbacks: { label: ctx => (ctx.parsed.y == null ? null : `${ctx.dataset.label}: ${m.fmt(ctx.parsed.y)}`) } }
+        },
+        scales: {
+          x: { ticks: { maxTicksLimit: 8, callback: function (v) { const d = this.getLabelForValue(v); return labels.length > 400 ? d.slice(0, 7) : Fmt.md(d); } }, grid: { display: false } },
+          y: { ticks: { callback: m.tick }, grid: { color: '#eef1f5' } }
+        }
+      }
+    });
+  }
+
   async function marketPanel(m, p, now) {
+    if (m.sma) return smaPanel(m, p);
     const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율', CSV: 'Investing.com', YAHOO: 'Yahoo Finance' };
     const data = await Promise.all(m.series.map(async s => {
       const hist = await DataService.getFxHistory(s.pair);
