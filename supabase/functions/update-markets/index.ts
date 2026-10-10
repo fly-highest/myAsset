@@ -1,5 +1,6 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
-//   DXY 달러 인덱스 · WTI · BRENT 유가 · QQQ · SPY · GLD · VIX · XAU(국제 금시세) · BTC(비트코인, 매일)
+//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · GLD · VIX · COPPER · XAU(국제 금시세) · BTC(매일)
+//   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화) · 네이버(한국 국채 3년) · KB(선도아파트 50) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
 //   과거 자료는 업로드한 CSV(Investing.com, source = 'CSV') — 그 날짜는 덮어쓰지 않습니다. 평일만, 날짜는 거래소 현지 날짜
@@ -22,6 +23,7 @@ const SERIES: { pair: string; google: string | null; yahoo: string; everyDay?: b
   { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' },
   { pair: 'GLD', google: 'NYSEARCA:GLD', yahoo: 'GLD' },
   { pair: 'VIX', google: 'INDEXCBOE:VIX', yahoo: '^VIX' }, // CBOE 변동성 지수
+  { pair: 'COPPER', google: null, yahoo: 'HG=F' }, // 구리 선물 (달러/파운드) — 구리/금 비율용
   // 국제 금시세(달러/온스, 금환산 이력용): GOOGLEFINANCE 의 CURRENCY:XAUUSD 는 값을 주지 않음 → Yahoo 금 선물
   { pair: 'XAU', google: null, yahoo: 'GC=F' },
   // 비트코인: 주말에도 거래 → 매일 저장, 날짜는 UTC 기준 (Investing.com 비트파이넥스와 같음)
@@ -108,5 +110,83 @@ Deno.serve(async (req) => {
       result[s.pair] = { ok: false, message: (e as Error).message };
     }
   }
+  // ---- Yahoo 가 아닌 출처 (Google Finance 에 없는 지표) ----
+  const save = async (pair: string, list: { date: string; close: number }[], source: string) => {
+    const rows = list.filter((r) => r.close != null && Number.isFinite(r.close))
+      .map((r) => ({ pair, date: r.date, close: r.close, source, updated_at: new Date().toISOString() }));
+    if (rows.length) {
+      const { error } = await db.from('fx_daily').upsert(rows, { onConflict: 'pair,date' });
+      if (error) throw new Error(error.message);
+    }
+    return rows.length;
+  };
+  const other = async (key: string, fn: () => Promise<string>) => {
+    try { result[key] = { ok: true, saved: await fn() }; } catch (e) { result[key] = { ok: false, message: (e as Error).message }; }
+  };
+  const BROWSER = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, text/plain, */*' };
+
+  // 미국 국채금리: 미 재무부 공식 일별 금리(올해 CSV) → 10년 · 2년 · 장단기 금리차(10년 − 2년), 단위 %
+  await other('UST', async () => {
+    const y = new Date().getUTCFullYear();
+    const r = await fetch(`https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${y}/all?type=daily_treasury_yield_curve&field_tdr_date_value=${y}&page&_format=csv`, { headers: UA });
+    if (!r.ok) throw new Error('Treasury HTTP ' + r.status);
+    const lines = (await r.text()).trim().split(/\r?\n/);
+    const head = lines[0].split(',').map((h) => h.replace(/"/g, '').trim());
+    const i2 = head.indexOf('2 Yr'), i10 = head.indexOf('10 Yr');
+    const t10: { date: string; close: number }[] = [], t2: typeof t10 = [], sp: typeof t10 = [];
+    for (const line of lines.slice(1, 16)) { // 최근 15거래일
+      const c = line.split(',');
+      const [m, d, yy] = c[0].split('/');
+      const date = `${yy}-${m}-${d}`, a = Number(c[i10]), b = Number(c[i2]);
+      if (a > 0) t10.push({ date, close: a });
+      if (b > 0) t2.push({ date, close: b });
+      if (a > 0 && b > 0) sp.push({ date, close: Math.round((a - b) * 100) / 100 });
+    }
+    return `10Y ${await save('UST10Y', t10, 'TREASURY')} · 2Y ${await save('UST2Y', t2, 'TREASURY')} · 차 ${await save('UST10Y2Y', sp, 'TREASURY')}`;
+  });
+  // 비트코인 원화 시세(업비트 일봉, 한국 날짜) — 김치 프리미엄 = 원화 시세 ÷ (달러 시세 × 환율) − 1
+  await other('BTC_KRW', async () => {
+    const r = await fetch('https://api.upbit.com/v1/candles/days?market=KRW-BTC&count=10', { headers: { accept: 'application/json' } });
+    if (!r.ok) throw new Error('Upbit HTTP ' + r.status);
+    const list = (await r.json() as { candle_date_time_kst: string; trade_price: number }[]).map((k) => ({ date: k.candle_date_time_kst.slice(0, 10), close: Number(k.trade_price) }));
+    return String(await save('BTC_KRW', list, 'UPBIT'));
+  });
+  // 한국 국채 3년 (네이버 금융), 단위 %
+  await other('KR3Y', async () => {
+    const r = await fetch('https://m.stock.naver.com/front-api/marketIndex/prices?category=bond&reutersCode=KR3YT%3DRR&page=1&pageSize=10', { headers: UA });
+    const list = ((await r.json())?.result || []).map((x: { localTradedAt: string; closePrice: string }) => ({ date: x.localTradedAt.slice(0, 10), close: Number(x.closePrice) }));
+    if (!list.length) throw new Error('네이버 국채 3년 없음');
+    return String(await save('KR3Y', list, 'NAVER'));
+  });
+  // KB 선도아파트 50 지수 (월간, 2008-12~), 날짜 = 그 달 1일
+  await other('KB_LEAD50', async () => {
+    const r = await fetch('https://data-api.kbland.kr/bfmstat/weekMnthlyHuseTrnd/leadApt50Indx', { headers: UA });
+    const d = (await r.json())?.dataBody?.data;
+    const dates: string[] = d?.['날짜리스트'] || [], vals: number[] = d?.['선도50지수리스트'] || [];
+    if (!dates.length) throw new Error('KB 응답 없음');
+    return String(await save('KB_LEAD50', dates.map((ym, i) => ({ date: `${ym.slice(0, 4)}-${ym.slice(4, 6)}-01`, close: Math.round(Number(vals[i]) * 10000) / 10000 })), 'KB'));
+  });
+  // 미국 연준 통계(FRED, 무료 CSV): 하이일드 채권 스프레드(%) · M2 통화량(십억 달러, 월간)
+  for (const [pair, id, monthly] of [['HY_OAS', 'BAMLH0A0HYM2', false], ['M2', 'M2SL', true]] as [string, string, boolean][]) {
+    await other(pair, async () => {
+      const r = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}&cosd=2016-10-01`, { headers: BROWSER });
+      if (!r.ok) throw new Error('FRED HTTP ' + r.status);
+      const list = (await r.text()).trim().split(/\r?\n/).slice(1).map((l) => { const [date, v] = l.split(','); return { date: monthly ? date.slice(0, 8) + '01' : date, close: Number(v) }; })
+        .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.date) && x.close > 0);
+      if (!list.length) throw new Error('FRED 자료 없음');
+      return String(await save(pair, list, 'FRED'));
+    });
+  }
+  // CNN 공포·탐욕 지수 (0~100, 비공식)
+  await other('FNG', async () => {
+    const r = await fetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2016-10-10', { headers: { ...BROWSER, Referer: 'https://edition.cnn.com/', Origin: 'https://edition.cnn.com' } });
+    if (!r.ok) throw new Error('CNN HTTP ' + r.status);
+    const pts: { x: number; y: number }[] = (await r.json())?.fear_and_greed_historical?.data || [];
+    if (!pts.length) throw new Error('CNN 자료 없음');
+    const byDate = new Map<string, number>();
+    pts.forEach((p) => byDate.set(new Date(p.x).toISOString().slice(0, 10), Math.round(p.y * 100) / 100));
+    return String(await save('FNG', [...byDate].map(([date, close]) => ({ date, close })), 'CNN'));
+  });
+
   return json({ ok: Object.values(result).every((r) => (r as { ok: boolean }).ok), sheetNote, result });
 });

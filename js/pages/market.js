@@ -31,8 +31,40 @@
     { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
       series: [{ pair: 'DXY', label: '달러 인덱스', color: PRICE }] },
     { id: 'oil', title: '국제 유가 (WTI · 브렌트유, 달러/배럴)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['y1'],
-      series: [{ pair: 'WTI', label: 'WTI유', color: PRICE }, { pair: 'BRENT', label: '브렌트유', color: PRICE2 }] }
+      series: [{ pair: 'WTI', label: 'WTI유', color: PRICE }, { pair: 'BRENT', label: '브렌트유', color: PRICE2 }] },
+    // 금리·스프레드는 '현재 − 평균'을 %가 아니라 차이(%p)로 보여 줌 (diffAbs)
+    { id: 'ust', title: '미국 국채금리 (10년 · 2년, %)', fmt: pctFmt, tick: v => v + '%', since: '2016-10-11', ma: [], diffAbs: true, unitSrc: '미 재무부 공식 금리',
+      series: [{ pair: 'UST10Y', label: '10년물', color: PRICE }, { pair: 'UST2Y', label: '2년물', color: PRICE2 }] },
+    { id: 'spread', title: '장단기 금리차 (미국 10년 − 2년, %p) · 0 아래 = 금리 역전(경기침체 신호)', fmt: ppFmt, tick: v => v + '%p', since: '2016-10-11', ma: [], diffAbs: true, zero: true,
+      series: [{ pair: 'UST10Y2Y', label: '10년 − 2년', color: PRICE }] },
+    { id: 'kimchi', title: '김치 프리미엄 (비트코인, %) · 업비트 원화 시세 ÷ (달러 시세 × 환율) − 1', fmt: ppFmt, tick: v => v + '%', since: '2017-09-25', ma: ['n20'], diffAbs: true, zero: true, everyDay: true,
+      series: [{ pair: 'KIMCHI', label: '김치 프리미엄', color: PRICE, derive: kimchiHistory }] },
+    { id: 'cugold', title: '구리 / 금 가격 비율 (×1000) · 오르면 경기 기대, 내리면 안전자산 선호', fmt: v => Number(v).toFixed(3), tick: v => Number(v).toFixed(2), since: '2016-10-11', ma: ['n200'],
+      series: [{ pair: 'CUGOLD', label: '구리/금', color: PRICE, derive: copperGoldHistory }] },
+    { id: 'kr3y', title: '한국 국채 3년 (%)', fmt: pctFmt, tick: v => v + '%', since: '2023-10-11', ma: [], diffAbs: true,
+      series: [{ pair: 'KR3Y', label: '국채 3년', color: PRICE }] },
+    { id: 'kb50', title: 'KB 선도아파트 50 지수 (월간, 2008-12~)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2008-12', ma: ['y1'], monthly: true,
+      series: [{ pair: 'KB_LEAD50', label: 'KB 선도50', color: PRICE }] }
   ];
+  function pctFmt(v) { return dec2(v) + '%'; }
+  function ppFmt(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + dec2(Math.abs(v)) + '%'; }
+  // 날짜 → 값 (그 날짜에 없으면 그 전 마지막 값)
+  function lookup(hist) {
+    const ds = hist.map(r => r.date), vs = hist.map(r => r.close);
+    return d => { let lo = 0, hi = ds.length - 1, hit = null; while (lo <= hi) { const mid = (lo + hi) >> 1; if (ds[mid] <= d) { hit = mid; lo = mid + 1; } else hi = mid - 1; } return hit == null ? null : vs[hit]; };
+  }
+  // 김치 프리미엄(%) = 업비트 원화 시세 ÷ (비트코인 달러 시세 × 원/달러 환율) − 1, 날짜별
+  async function kimchiHistory() {
+    const [krw, usdBtc, fx] = await Promise.all(['BTC_KRW', 'BTC', 'USD/KRW'].map(p => DataService.getFxHistory(p)));
+    const b = lookup(usdBtc), f = lookup(fx);
+    return krw.map(r => { const u = b(r.date), x = f(r.date); return u && x ? { date: r.date, close: Math.round((r.close / (u * x) - 1) * 10000) / 100, source: 'CALC' } : null; }).filter(Boolean);
+  }
+  // 구리/금 비율 = 구리(달러/파운드) ÷ 금(달러/온스) × 1000
+  async function copperGoldHistory() {
+    const [cu, au] = await Promise.all(['COPPER', 'XAU'].map(p => DataService.getFxHistory(p)));
+    const g = lookup(au);
+    return cu.map(r => { const x = g(r.date); return x ? { date: r.date, close: Math.round((r.close / x) * 1e6) / 1000, source: 'CALC' } : null; }).filter(Boolean);
+  }
 
   // 이동평균 종류: [키, 이름, 길이, 색] — n = 자료 개수(거래일, 비트코인은 날짜), y = 달력 기간(개월)
   const MA_OPTS = [
@@ -76,7 +108,7 @@
     if (!el) return;
     const p = FX_PERIODS.find(x => x[0] === fxPeriod);
     el.innerHTML = `
-      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· QQQ · SPY · GLD · 비트코인 · VIX · 환율 · 달러 인덱스 · 유가</span></h2>
+      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · KB 선도50</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${FX_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
@@ -101,10 +133,10 @@
 
   // 한 영역(카드) 그리기: 위쪽 숫자 칸 + 이동평균 체크박스 + 차트
   async function marketPanel(m, p) {
-    const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율', CSV: 'Investing.com', YAHOO: 'Yahoo Finance' };
+    const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율', CSV: 'Investing.com', YAHOO: 'Yahoo Finance', TREASURY: '미 재무부', UPBIT: '업비트', NAVER: '네이버 금융', KB: 'KB부동산', FRED: 'FRED', CALC: '계산값' };
     const now = lastNow || await DataService.getFxRate();
     const data = await Promise.all(m.series.map(async s => {
-      const hist = await DataService.getFxHistory(s.pair);
+      const hist = s.derive ? await s.derive() : await DataService.getFxHistory(s.pair);
       const lastRow = hist[hist.length - 1];
       const cur = s.live ? { v: now.rate, note: `${SRC[now.source] || now.source} · ${Fmt.mdhm(now.as_of)} 기준` }
         : lastRow ? { v: lastRow.close, note: `${lastRow.date} 종가 · ${SRC[lastRow.source] || lastRow.source}` } : null;
@@ -137,15 +169,15 @@
     } else {
       // 환율 · 달러 인덱스 · 유가: 현재 · 기간 평균 · 현재 − 기간 평균 (지표마다 한 줄)
       stats = data.map(({ s, c, cur }) => {
-        const diffPct = c.avg && cur ? pct(cur.v, c.avg) : null;
+        const diffPct = c.avg && cur ? (m.diffAbs ? cur.v - c.avg : pct(cur.v, c.avg)) : null; // diffAbs: 차이(단위 그대로)
         const name = m.series.length > 1 ? `${s.label} ` : '';
         return `<div class="fx-stats">
           <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}</div>
             <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div></div>
           <div><div class="stat-t">${name}${p[1]} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
-            <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}거래일 종가 평균` : '데이터 없음'}</div></div>
-          <div><div class="stat-t">${name}현재 − ${p[1]} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${Fmt.pct(diffPct)}</span>`}</div>
-            <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.fmt(Math.abs(cur.v - c.avg))} · 기간 최고 ${m.fmt(c.hi)} / 최저 ${m.fmt(c.lo)}` : ''}</div></div>
+            <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
+          <div><div class="stat-t">${name}현재 − ${p[1]} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
+            <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.diffAbs ? dec2(Math.abs(cur.v - c.avg)) + '%p' : m.fmt(Math.abs(cur.v - c.avg))} · 기간 최고 ${m.fmt(c.hi)} / 최저 ${m.fmt(c.lo)}` : ''}</div></div>
         </div>`;
       }).join('');
     }
@@ -154,7 +186,7 @@
     box.innerHTML = `<h3 class="sec-sub" style="margin-top:0">${m.title}</h3>
       ${stats}
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
-      <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준) · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? ' · 브렌트유 이동평균은 짧은 점선' : ''}</p>`;
+      <p class="small muted" style="margin:6px 0 0">${m.monthly ? `월간 자료 (${m.since}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${m.since}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     box.querySelectorAll('[data-ma]').forEach(cb => cb.onchange = () => {
       const next = [...box.querySelectorAll('[data-ma]:checked')].map(x => x.dataset.ma);
       saveMa(m, next);
@@ -178,6 +210,7 @@
         [['+1%', 1.01], ['−1%', 0.99]].forEach(([t, f]) => datasets.push({ label: `200일 ${t}`, data: onLabels(hist, m200.map(v => (v == null ? null : v * f))), borderColor: BAND, borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
       }
     });
+    if (m.zero) datasets.push({ label: '', data: labels.map(() => 0), borderColor: '#9aa5b1', borderWidth: 1, borderDash: [2, 2], pointRadius: 0 }); // 0 기준선
     UI.chart('ch-' + m.id, {
       type: 'line',
       data: { labels, datasets },
@@ -185,11 +218,11 @@
         responsive: true, maintainAspectRatio: false, animation: false, layout: { padding: { top: 26 } }, // 오른쪽 위 체크박스 자리
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2 } },
-          tooltip: { callbacks: { label: ctx => (ctx.parsed.y == null ? null : `${ctx.dataset.label}: ${m.fmt(ctx.parsed.y)}`) } }
+          legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2, filter: it => it.text !== '' } },
+          tooltip: { callbacks: { label: ctx => (ctx.parsed.y == null || !ctx.dataset.label ? null : `${ctx.dataset.label}: ${m.fmt(ctx.parsed.y)}`) } }
         },
         scales: {
-          x: { ticks: { maxTicksLimit: 8, callback: function (v) { const d = this.getLabelForValue(v); return labels.length > 400 ? d.slice(0, 7) : Fmt.md(d); } }, grid: { display: false } },
+          x: { ticks: { maxTicksLimit: 8, callback: function (v) { const d = this.getLabelForValue(v); return labels.length > 400 || m.monthly ? d.slice(0, 7) : Fmt.md(d); } }, grid: { display: false } },
           y: { ticks: { callback: m.tick }, grid: { color: '#eef1f5' } }
         }
       }
