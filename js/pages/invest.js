@@ -105,9 +105,9 @@
   const MARKETS = [
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: '#2457d6', live: true }] },
-    { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2021-10-11',
+    { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'DXY', label: '달러 인덱스', color: '#17a589' }] },
-    { id: 'oil', title: '국제 유가 (WTI · 브렌트유, 달러/배럴)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2021-10-11',
+    { id: 'oil', title: '국제 유가 (WTI · 브렌트유, 달러/배럴)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'WTI', label: 'WTI유', color: '#b7791f' }, { pair: 'BRENT', label: '브렌트유', color: '#7a3fb3' }] }
   ];
 
