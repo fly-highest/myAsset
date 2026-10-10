@@ -108,6 +108,11 @@
       series: [{ pair: 'QQQ', label: 'QQQ', color: '#2457d6' }] },
     { id: 'spy', sma: true, band: false, title: 'SPY (S&P500 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'SPY', label: 'SPY', color: '#17a589' }] },
+    { id: 'gld', sma: true, band: false, title: 'GLD (금 ETF)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
+      series: [{ pair: 'GLD', label: 'GLD', color: '#c9a227' }] },
+    // 비트코인은 주말에도 거래 → 매일 저장, 50일선·200일선도 달력 날짜 기준
+    { id: 'btc', sma: true, band: false, everyDay: true, title: '비트코인 (BTC/USD)', fmt: v => '$' + dec2(v), tick: v => '$' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
+      series: [{ pair: 'BTC', label: 'BTC', color: '#7a3fb3' }] }, // 50일선(주황)과 구분되게 보라
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: '#2457d6', live: true }] },
     { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10',
@@ -121,7 +126,7 @@
     if (!el) return;
     const p = FX_PERIODS.find(x => x[0] === fxPeriod);
     el.innerHTML = `
-      <div class="sec-hd"><h2>시장 지표 <span class="muted small">· QQQ · SPY · 환율 · 달러 인덱스 · 유가</span></h2>
+      <div class="sec-hd"><h2>시장 지표 <span class="muted small">· QQQ · SPY · GLD · 비트코인 · 환율 · 달러 인덱스 · 유가</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${FX_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
@@ -187,7 +192,7 @@
           <div class="stat-sub">${m.band === false ? '' : zone}</div></div>
       </div>
       <div class="chart-box" style="height:280px"><canvas id="ch-${m.id}"></canvas></div>
-      <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, 평일마다 자동 추가) · 이동평균은 거래일 기준 50일·200일 (기간 버튼은 보이는 구간만 바꿈) ${m.band === false ? '' : ' · 점선 = 200일선 ±1%'}</p>`;
+      <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, ${m.everyDay ? "매일" : "평일마다"} 자동 추가) · 이동평균은 ${m.everyDay ? "날짜(주말 포함)" : "거래일"} 기준 50일·200일 (기간 버튼은 보이는 구간만 바꿈) ${m.band === false ? '' : ' · 점선 = 200일선 ±1%'}</p>`;
     const labels = c.rows.map(r => r.date);
     if (!labels.length) return;
     const cut = arr => arr.slice(i0);

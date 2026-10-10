@@ -1,5 +1,5 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
-//   DXY 달러 인덱스 · WTI · BRENT 유가 · QQQ · SPY
+//   DXY 달러 인덱스 · WTI · BRENT 유가 · QQQ · SPY · GLD · BTC(비트코인, 매일)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
 //   과거 자료는 업로드한 CSV(Investing.com, source = 'CSV') — 그 날짜는 덮어쓰지 않습니다. 평일만, 날짜는 거래소 현지 날짜
@@ -13,20 +13,23 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } });
 const UA = { 'User-Agent': 'Mozilla/5.0' };
-const SERIES = [
+const SERIES: { pair: string; google: string | null; yahoo: string; everyDay?: boolean }[] = [
   // 달러 인덱스 · WTI · 브렌트유: GOOGLEFINANCE 가 값을 주지 않음 (2026-10-10, 시트로 20회 확인) → Yahoo 만 사용
   { pair: 'DXY', google: null, yahoo: 'DX-Y.NYB' },
   { pair: 'WTI', google: null, yahoo: 'CL=F' },
   { pair: 'BRENT', google: null, yahoo: 'BZ=F' },
   { pair: 'QQQ', google: 'NASDAQ:QQQ', yahoo: 'QQQ' },
-  { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' }
+  { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' },
+  { pair: 'GLD', google: 'NYSEARCA:GLD', yahoo: 'GLD' },
+  // 비트코인: 주말에도 거래 → 매일 저장, 날짜는 UTC 기준 (Investing.com 비트파이넥스와 같음)
+  { pair: 'BTC', google: 'CURRENCY:BTCUSD', yahoo: 'BTC-USD', everyDay: true }
 ];
 
 type Bar = { date: string; close: number; open: number | null; high: number | null; low: number | null; source: string };
 const weekday = (d: string) => { const w = new Date(d + 'T00:00:00Z').getUTCDay(); return w >= 1 && w <= 5; };
 const num = (v: unknown) => (v == null || !(Number(v) > 0) ? null : Math.round(Number(v) * 10000) / 10000);
 
-async function fromYahoo(symbol: string): Promise<Bar[]> {
+async function fromYahoo(symbol: string, everyDay = false): Promise<Bar[]> {
   const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10d&interval=1d`, { headers: UA });
   if (!r.ok) throw new Error(`Yahoo ${symbol} HTTP ${r.status}`);
   const res = (await r.json())?.chart?.result?.[0];
@@ -41,7 +44,7 @@ async function fromYahoo(symbol: string): Promise<Bar[]> {
     const b = bars.find((x) => x.date === d);
     if (b) b.close = live; else bars.push({ date: d, close: live, open: null, high: null, low: null, source: 'YAHOO' });
   }
-  return bars.filter((b) => weekday(b.date));
+  return everyDay ? bars : bars.filter((b) => weekday(b.date));
 }
 
 // 뉴욕 현지 날짜와 장 시작(09:30) 이후인지 — Yahoo 를 못 받았을 때 Google 값의 날짜를 정하는 데 사용
@@ -76,11 +79,11 @@ Deno.serve(async (req) => {
   for (const s of SERIES) {
     try {
       let bars: Bar[] = [], yErr = '';
-      try { bars = await fromYahoo(s.yahoo); } catch (e) { yErr = (e as Error).message; }
+      try { bars = await fromYahoo(s.yahoo, !!s.everyDay); } catch (e) { yErr = (e as Error).message; }
       // Google 값 = 오늘(가장 최근 거래일) 종가. 날짜는 Yahoo 의 최근 거래일, Yahoo 가 없으면 뉴욕 날짜(평일·장 시작 후)
       const gv = s.google ? g.get(s.google) : undefined;
       if (gv) {
-        const d = bars.length ? bars[bars.length - 1].date : (weekday(ny.date) && ny.afterOpen ? ny.date : null);
+        const d = bars.length ? bars[bars.length - 1].date : s.everyDay ? new Date().toISOString().slice(0, 10) : (weekday(ny.date) && ny.afterOpen ? ny.date : null);
         if (d) {
           const b = bars.find((x) => x.date === d);
           if (b) { b.close = gv; b.source = 'GOOGLE'; } else bars.push({ date: d, close: gv, open: null, high: null, low: null, source: 'GOOGLE' });
