@@ -42,7 +42,7 @@
 
   // 엑셀: 화면의 통화 버튼과 관계없이 3개 탭(원화환산 / 달러환산 / 통화별)을 한 파일로 — PC 백업용
   // 각 탭 = 1행 설명 + 2행 기준정보 + 머리글 → 종목 행(계좌 순) … → 맨 아래 전체 합계
-  // 맨 왼쪽 열 '기준시각' = 내려받은 시각(KST) YYYYMMDDHHmmss (텍스트) — 언제 데이터인지 바로 알 수 있게
+  // 맨 왼쪽 열 '기준시각' = 현재가 기준 시각(KST) YYYYMMDDHHmmss (텍스트) — 언제 데이터인지 바로 알 수 있게
   async function exportXlsx() {
     const { model, status, fxInfo } = last;
     const ps = await DataService.getPriceStatus();
@@ -52,10 +52,11 @@
     const r2 = v => Math.round(v * 100) / 100;
     const money = (v, cur) => (cur === 'USD' ? r2(v) : Math.round(v));
     const curLabel = c => (c === 'USD' ? 'USD($)' : 'KRW(₩)');
-    const now = new Date();
-    const k = new Date(now.getTime() + 9 * 3600 * 1000).toISOString(); // KST
+    // 기준시각 = 현재가 기준 시각 (현재가가 아직 없으면 내려받은 시각), KST
+    const base = ps.latestAsOf ? new Date(ps.latestAsOf) : new Date();
+    const k = new Date(base.getTime() + 9 * 3600 * 1000).toISOString();
     const stamp = k.slice(0, 4) + k.slice(5, 7) + k.slice(8, 10) + k.slice(11, 13) + k.slice(14, 16) + k.slice(17, 19);
-    const info = `기준시각 ${stamp} (내려받은 시각, KST) · 현황 기준일 ${status.baseDate} (${status.baseSource}) · 현재가 기준 ${ps.latestAsOf ? Fmt.mdhm(ps.latestAsOf) : '예시 가격'} · 적용 환율 ₩${fxInfo.rate} (${Fmt.mdhm(fxInfo.as_of)})`;
+    const info = `기준시각 ${stamp} (${ps.latestAsOf ? '현재가 기준 시각' : '현재가가 없어 내려받은 시각'}, KST) · 현황 기준일 ${status.baseDate} (${status.baseSource}) · 현재가 기준 ${ps.latestAsOf ? Fmt.mdhm(ps.latestAsOf) : '예시 가격'} · 적용 환율 ₩${fxInfo.rate} (${Fmt.mdhm(fxInfo.as_of)})`;
     const HEAD = ['계좌명', '증권사', '계좌종류', '구분', '종목명', '심볼', '거래소', '자산군', '표시 통화',
       '수량', '평균매입가(원본)', '매입환율', '현재가(원본)', '현재가 기준시각', '현재가 출처',
       '평가금액', '투자금액', '손익', '가격손익(₩)', '환차손익(₩)', '수익률(%)', '원화 기준 수익률(%)', '전체 대비 비중(%)'];
