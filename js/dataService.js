@@ -1221,7 +1221,8 @@ window.DataService = (function () {
   // 내려받는 엑셀 (ExcelJS): 증권사·계좌종류 드롭다운 + 심볼 → 종목 정보 자동 입력
   const colLetter = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   const NUM_FRAC = '#,##0.########'; // 소수 수량 (예: 0.01234567 BTC)
-  async function buildExcelBuffer(baseDate, rows) {
+  // latest: 추가로 넣을 '최신 계좌현황' 시트의 행 (테스트용 샘플 파일에 지금 보유 현황을 함께 저장할 때)
+  async function buildExcelBuffer(baseDate, rows, { latest = null } = {}) {
     if (!window.ExcelJS) throw fail('엑셀 라이브러리(ExcelJS)를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
     const wb = new ExcelJS.Workbook();
     const headFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EEF9' } };
@@ -1284,6 +1285,25 @@ window.DataService = (function () {
     ws.addConditionalFormatting({ ref: `${qL}2:${qL}${last}`, rules: [
       { type: 'expression', priority: 3, formulae: [`AND(ISNUMBER($${qL}2),MOD($${qL}2,1)<>0)`], style: { numFmt: NUM_FRAC } }] });
 
+    // 최신 계좌현황 (참고용 값만 — 업로드는 '보유' 시트만 읽음. 이 행들을 '보유' 시트에 붙여 넣으면 지금 현황 그대로 올릴 수 있음)
+    if (latest) {
+      const ls = wb.addWorksheet('최신 계좌현황', { views: [{ state: 'frozen', ySplit: 2 }] });
+      ls.getCell('A1').value = `지금 보유 현황 · 현황 기준일 ${state.meta.baseDate} (${state.meta.baseSource}) · 내려받은 시각 ${Fmt.mdhm(nowISO())} · 업로드는 '보유' 시트만 읽습니다 (이 행들을 '보유' 시트에 붙여 넣어 쓸 수 있습니다)`;
+      ls.getCell('A1').font = { italic: true, color: { argb: 'FF666666' } };
+      ls.getRow(2).values = HEADERS;
+      ls.getRow(2).eachCell(c => { c.font = bold; c.fill = headFill; });
+      latest.forEach((d, i) => {
+        const row = ls.getRow(i + 3);
+        row.values = d.map(v => (v === undefined ? null : v));
+        row.getCell(col('심볼')).numFmt = '@';
+        row.getCell(col('심볼')).value = String(d[col('심볼') - 1] ?? '');
+        const q = d[col('수량') - 1], cur = d[col('통화') - 1];
+        row.getCell(col('수량')).numFmt = q % 1 ? NUM_FRAC : '#,##0';
+        row.getCell(col('평균매입가')).numFmt = cur === 'USD' ? '#,##0.00' : '#,##0';
+      });
+      [14, 13, 12, 12, 30, 9, 9, 7, 14, 14, 13, 34].forEach((w, j) => { ls.getColumn(j + 1).width = w; });
+    }
+
     // 종목목록: 심볼 → 종목명·거래소·자산유형·통화 (DB = 종목 마스터 + 외부 종목 목록)
     const list = wb.addWorksheet('종목목록', { views: [{ state: 'frozen', ySplit: 1 }] });
     list.addRow(['심볼', '종목명', '거래소', '자산유형', '통화']).eachCell(c => { c.font = bold; c.fill = headFill; });
@@ -1320,7 +1340,7 @@ window.DataService = (function () {
   }
   async function downloadSampleXlsx(baseDate) {
     const d = baseDate || Fmt.todayKST();
-    saveBlob(await buildExcelBuffer(d, MOCK.xlsxSamples.sample), `myAsset_샘플데이터_${d}.xlsx`);
+    saveBlob(await buildExcelBuffer(d, MOCK.xlsxSamples.sample, { latest: currentRows() }), `myAsset_샘플데이터_${d}.xlsx`);
   }
   async function downloadTemplateXlsx(baseDate) {
     const d = baseDate || Fmt.todayKST();
