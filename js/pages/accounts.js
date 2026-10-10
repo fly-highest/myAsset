@@ -27,7 +27,7 @@
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
       <div class="sec">
         ${UI.treeSection(model, mode, st, { editable: false, showUpdated: true, groupSelect: true })}
-        <p class="small muted">자산군을 클릭하면 자산군 현황의 해당 위치로 이동합니다.
+        <p class="small muted">자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.
           회색 <span class="gbadge unassigned">기타종목<small>미지정</small></span>은 자산군 미지정 종목입니다.</p>
       </div>`;
     UI.bindTree(main, model, st);

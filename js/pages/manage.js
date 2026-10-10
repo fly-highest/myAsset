@@ -61,21 +61,24 @@
 
   // ---------------- 자산 구성 관리 ----------------
   function compositionTab(instruments, heldCount, cat, plans) {
+    // 추종 통화 · 자산 성향 표시 (거래 통화와 같거나 기본값이면 흐리게)
+    const trackCell = i => { const t = TrackCur.of(i); return t === i.currency ? `<span class="muted">${esc(t)}</span>` : `<b>${esc(t)}</b>`; };
+    const styleCell = i => { const s = Styles.effective(i); return Styles.isDefault(i) ? `<span class="muted" title="자산유형으로 정한 기본값">${esc(Styles.name(s))}</span>` : esc(Styles.name(s)); };
     const row = (i, assigned) => `<tr>
       <td class="nm">${esc(i.name)} <span class="muted small">${esc(i.eng_name || '')}</span></td>
       <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td>
-      <td>${esc(i.asset_type)}</td><td>${esc(i.currency)}</td>
+      <td>${esc(i.asset_type)}</td><td>${esc(i.currency)}</td><td>${trackCell(i)}</td><td>${styleCell(i)}</td>
       <td class="num">${heldCount[i.id] ? `${heldCount[i.id]}개 계좌` : '<span class="muted">보유 없음</span>'}</td>
       <td class="actions">${assigned
-        ? `<button type="button" class="btn btn-sm" data-move="${esc(i.id)}" title="다른 자산군으로 옮기기">자산군 변경</button><button type="button" class="btn btn-sm btn-ghost-danger" data-remove="${esc(i.id)}">제거</button>`
-        : `<select class="inline" data-assign="${esc(i.id)}"><option value="">자산군 지정…</option>${Groups.list.map(g => `<option value="${g.code}">${g.name}</option>`).join('')}</select>`}</td>
+        ? `<button type="button" class="btn btn-sm" data-move="${esc(i.id)}" title="자산군 · 추종 통화 · 자산 성향 변경">자산군 변경</button><button type="button" class="btn btn-sm btn-ghost-danger" data-remove="${esc(i.id)}">제거</button>`
+        : `<select class="inline" data-assign="${esc(i.id)}"><option value="">자산군 지정…</option>${Groups.list.map(g => `<option value="${g.code}">${g.name}</option>`).join('')}</select><button type="button" class="btn btn-sm" data-move="${esc(i.id)}" title="자산군 · 추종 통화 · 자산 성향 변경">자산군 변경</button>`}</td>
     </tr>`;
     const blocks = Groups.list.map(g => {
       const list = instruments.filter(i => i.asset_group === g.code);
       return `<tbody>
-        <tr class="g-row" id="comp-${g.code}"><td colspan="5"><span class="dot" style="background:${g.color}"></span>${g.name} <span class="muted small">${list.length}종목</span></td>
+        <tr class="g-row" id="comp-${g.code}"><td colspan="7"><span class="dot" style="background:${g.color}"></span>${g.name} <span class="muted small">${list.length}종목</span></td>
           <td class="actions"><button type="button" class="btn btn-sm" data-target-group="${g.code}" title="기준별 이 자산군의 목표 비중(%)을 수정합니다">목표 % 수정</button> <button type="button" class="btn btn-sm btn-primary" data-add-to="${g.code}">+ 종목 추가</button></td></tr>
-        ${list.map(i => row(i, true)).join('') || '<tr><td colspan="6" class="muted">아직 종목이 없습니다</td></tr>'}
+        ${list.map(i => row(i, true)).join('') || '<tr><td colspan="8" class="muted">아직 종목이 없습니다</td></tr>'}
       </tbody>`;
     }).join('');
     const un = instruments.filter(i => !i.asset_group);
@@ -88,11 +91,11 @@
       </div>
       <p class="small muted">종목을 자산군에 <b>추가</b>하거나 <b>제거</b>해도 종목과 보유 내역은 지워지지 않고 자산군 분류만 바뀝니다. 한 종목을 옮기면 그 종목을 가진 모든 계좌의 보유분이 함께 옮겨집니다.</p>
       <div class="tbl-wrap"><table class="tbl comp-tbl">
-        <thead><tr><th>종목명</th><th>심볼</th><th>자산유형</th><th>통화</th><th class="num">보유</th><th>관리</th></tr></thead>
+        <thead><tr><th>종목명</th><th>심볼</th><th>자산유형</th><th>거래 통화</th><th>추종 통화</th><th>자산 성향</th><th class="num">보유</th><th>관리</th></tr></thead>
         ${blocks}
         <tbody>
-          <tr class="g-row"><td colspan="6">미지정 <span class="muted small">${un.length}종목 · 자산군을 지정하지 않아 기타종목으로 집계됩니다</span></td></tr>
-          ${un.map(i => row(i, false)).join('') || '<tr><td colspan="6" class="muted">없음</td></tr>'}
+          <tr class="g-row"><td colspan="8">미지정 <span class="muted small">${un.length}종목 · 자산군을 지정하지 않아 기타종목으로 집계됩니다</span></td></tr>
+          ${un.map(i => row(i, false)).join('') || '<tr><td colspan="8" class="muted">없음</td></tr>'}
         </tbody>
       </table></div>`;
   }
@@ -316,24 +319,64 @@
     draw();
   }
 
-  // 종목 한 개의 자산군 변경 팝업 (자산 구성 관리 표 · 계좌 관리 표의 종목 행 [변경])
+  // 종목 속성 팝업 ([자산군 변경]): 자산군 · 추종 통화 · 자산 성향 — 고른 뒤 [저장]
+  // (자산 구성 관리 표 · 계좌 관리 표의 종목 행에서 열림. 이 종목을 가진 모든 계좌에 적용)
   function groupPicker(inst) {
-    const cur = inst.asset_group && Groups.has(inst.asset_group) ? inst.asset_group : '';
-    const btn = (code, label, color) => `<button type="button" class="btn ${code === cur ? 'on' : ''}" data-pick="${code}">${color ? `<span class="dot" style="background:${color}"></span>` : ''}${esc(label)}${code === cur ? ' <span class="muted small">(현재)</span>' : ''}</button>`;
+    const sel = {
+      group: inst.asset_group && Groups.has(inst.asset_group) ? inst.asset_group : '',
+      track: TrackCur.of(inst),
+      style: Styles.normalize(inst.style) || ''
+    };
+    // 미리 정한 혼합(성50배50·성55배45)이 아닌 혼합은 '혼합 직접 입력'으로 보여 줌
+    const mm = String(sel.style).match(/^MIX_(\d+)$/);
+    sel.mix = mm ? +mm[1] : 60;
+    if (mm && !Styles.PRESET_MIX.includes(sel.mix)) sel.style = 'MIX';
+    const opt = (kind, code, label, color, extra = '') => `<button type="button" class="btn ${sel[kind] === code ? 'on' : ''}" data-${kind}="${code}">${color ? `<span class="dot" style="background:${color}"></span>` : ''}${esc(label)}${extra}</button>`;
+    const defStyle = Styles.effective({ ...inst, style: null });
     const m = App.modal({
-      title: '자산군 변경',
-      body: `<p style="margin-top:0"><b>${esc(inst.name)}</b> <span class="muted small">${esc(inst.symbol)} · ${esc(inst.exchange)} · ${esc(inst.currency)}</span></p>
-        <p class="small muted">이 종목을 가진 <b>모든 계좌</b>의 보유분이 함께 옮겨집니다. 종목·보유 내역은 그대로이고 자산군 분류만 바뀝니다.</p>
-        <div class="gp-list">${Groups.list.map(g => btn(g.code, g.name, g.color)).join('')}${btn('', '미지정 (기타종목으로 집계)')}</div>`,
-      buttons: [{ label: '닫기' }]
+      title: '종목 속성 — 자산군 · 추종 통화 · 자산 성향', size: 'mid', body: '',
+      buttons: [{ label: '취소' }, {
+        label: '저장', kind: 'primary', onClick: async api => {
+          let style = sel.style;
+          if (style === 'MIX') {
+            const g = Number(api.body.querySelector('#mix-g').value);
+            if (!(g > 0 && g < 100 && Number.isInteger(g))) { const el = api.body.querySelector('#gp-err'); el.hidden = false; el.textContent = '혼합 성향의 성장 비율은 1~99 사이 정수로 입력해 주세요.'; return; }
+            style = 'MIX_' + g;
+          }
+          try {
+            await DataService.updateInstrumentAttrs(inst.id, { asset_group: sel.group || null, track_currency: sel.track, style: style || null });
+            api.close();
+            App.toast(`${inst.name}: ${sel.group ? Groups.name(sel.group) : '자산군 미지정'} · 추종 ${sel.track} · ${style ? Styles.name(style) : '성향 기본값'}`);
+          } catch (e) { const el = api.body.querySelector('#gp-err'); el.hidden = false; el.textContent = e.message; }
+        }
+      }]
     });
-    m.body.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
-      const code = b.dataset.pick;
-      m.close();
-      if (code === cur) return;
-      await DataService.updateInstrumentGroup(inst.id, code || null);
-      App.toast(`${inst.name} → ${code ? Groups.name(code) : '미지정'}`);
-    });
+    function draw() {
+      const isMix = sel.style === 'MIX', g = sel.mix;
+      m.body.innerHTML = `<p style="margin-top:0"><b>${esc(inst.name)}</b> <span class="muted small">${esc(inst.symbol)} · ${esc(inst.exchange)} · 거래 통화 ${esc(inst.currency)}</span></p>
+        <p class="small muted">이 종목을 가진 <b>모든 계좌</b>에 적용됩니다. 종목·보유 내역은 그대로이고 분류만 바뀝니다.</p>
+        <h3 class="sec-sub">자산군</h3>
+        <div class="gp-list">${Groups.list.map(x => opt('group', x.code, x.name, x.color)).join('')}${opt('group', '', '미지정 (기타종목으로 집계)')}</div>
+        <h3 class="sec-sub">추종 통화 <span class="muted small">— 가격이 따라가는 통화 (예: 원화로 사는 미국 ETF = USD)</span></h3>
+        <div class="gp-list">${TrackCur.list.map(x => opt('track', x.code, x.name, x.color, x.code === inst.currency ? ' <span class="muted small">(거래 통화와 같음)</span>' : '')).join('')}</div>
+        <h3 class="sec-sub">자산 성향</h3>
+        <div class="gp-list">
+          ${Styles.list.map(x => opt('style', x.code, x.name, x.color)).join('')}
+          ${Styles.PRESET_MIX.map(p => opt('style', 'MIX_' + p, `${Styles.name('MIX_' + p)}`, '', ` <span class="muted small">(성장 ${p}% · 배당 ${100 - p}%)</span>`)).join('')}
+          <button type="button" class="btn ${isMix ? 'on' : ''}" data-style="MIX">혼합 직접 입력</button>
+          ${opt('style', '', `기본값 (${Styles.name(defStyle)})`, '', ' <span class="muted small">자산유형으로 정함</span>')}
+        </div>
+        <div class="toolbar" id="mix-box" style="margin-top:8px" ${isMix ? '' : 'hidden'}>성장 <div class="input-unit" style="width:110px"><input type="number" id="mix-g" min="1" max="99" step="1" value="${g}"><span>%</span></div>
+          · 배당 <b id="mix-d">${100 - g}%</b> <span class="muted small">→ 통계에서 성장·배당에 비율대로 나눠 합산</span></div>
+        <div class="notice" id="gp-err" hidden></div>`;
+      ['group', 'track', 'style'].forEach(kind => m.body.querySelectorAll(`[data-${kind}]`).forEach(b => b.onclick = () => {
+        sel[kind] = b.dataset[kind];
+        draw();
+      }));
+      const mg = m.body.querySelector('#mix-g');
+      mg.oninput = () => { const v = Number(mg.value); sel.mix = v; m.body.querySelector('#mix-d').textContent = v > 0 && v < 100 ? (100 - v) + '%' : '—'; };
+    }
+    draw();
   }
 
   async function addToGroup(code) {
@@ -637,7 +680,7 @@
           </div>
           <div class="row2">
             <div class="field"><label>자산유형</label><select id="n-type">${APP_CONFIG.ASSET_TYPES.map(x => `<option>${x}</option>`).join('')}</select></div>
-            <div class="field"><label>통화</label><select id="n-cur">${APP_CONFIG.CURRENCIES.map(x => `<option>${x}</option>`).join('')}</select></div>
+            <div class="field"><label>거래 통화</label><select id="n-cur">${APP_CONFIG.CURRENCIES.map(x => `<option>${x}</option>`).join('')}</select></div>
           </div>
           <div class="field"><label>자산군</label>
             <select id="n-group"><option value="">선택 안 함 (미지정 → 기타종목으로 집계)</option>${Groups.list.map(g => `<option value="${g.code}"${g.code === presetGroup ? ' selected' : ''}>${g.name}</option>`).join('')}</select></div>
@@ -756,7 +799,7 @@
         body: `<p class="small muted" style="margin-top:0">업로드 파일에 있는 종목의 자산군을 고르세요. 미리보기에 바로 반영되고, <b>[반영]</b>을 눌러야 저장됩니다. 이미 등록된 종목의 자산군을 바꾸면 그 종목을 가진 모든 계좌에 적용됩니다.</p>
           <div class="toolbar" style="margin-bottom:8px"><label class="small muted">미지정 종목 한꺼번에</label><select id="gm-all" class="inline"><option value="">선택…</option>${Groups.list.map(g => `<option value="${g.code}">${esc(g.name)}</option>`).join('')}</select></div>
           <div class="tbl-wrap scroll-y" style="max-height:55vh"><table class="tbl">
-            <thead><tr><th>종목명</th><th>심볼</th><th>통화</th><th class="num">보유</th><th>자산군</th></tr></thead>
+            <thead><tr><th>종목명</th><th>심볼</th><th>거래 통화</th><th class="num">보유</th><th>자산군</th></tr></thead>
             <tbody>${list.map(i => `<tr>
               <td class="nm">${esc(i.name)} ${i.isNew ? '<span class="tag" title="반영하면 종목 마스터에 새로 등록됩니다">새 종목</span>' : ''}</td>
               <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td><td>${esc(i.currency)}</td>

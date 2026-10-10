@@ -72,6 +72,10 @@ window.DataService = (function () {
   function prepare() {
     if (!state.targets) state.targets = clone(DEFAULT_TARGETS); // 예전 저장 데이터에는 목표 비중이 없음
     if (!state.groups) state.groups = clone(APP_CONFIG.GROUPS); // 예전 저장 데이터는 기본 7개 자산군
+    if (!state.meta.renamedCrypto) { // 자산군 이름 변경: 블록체인 → Crypto (한 번만)
+      state.groups.forEach(g => { if (g.code === 'BLOCKCHAIN' && g.name === '블록체인') g.name = 'Crypto'; });
+      state.meta.renamedCrypto = true;
+    }
     Groups.set(state.groups);
     state.instruments.forEach(i => { if (i.asset_group && !Groups.has(i.asset_group)) i.asset_group = null; }); // 삭제된 자산군 → 미지정
     addNewDefaultBrokers();
@@ -684,6 +688,28 @@ window.DataService = (function () {
     if (!inst) throw fail('종목을 찾을 수 없습니다.');
     if (group !== null && !Groups.codes.includes(group)) throw fail('알 수 없는 자산군입니다.');
     inst.asset_group = group;
+    inst.updated_at = nowISO();
+    markChanged(false); commit();
+    return clone(inst);
+  }
+
+  // 종목 속성 한꺼번에 변경: 자산군 · 추종 통화 · 자산 성향 (undefined = 그대로, null/'' = 기본값/미지정)
+  async function updateInstrumentAttrs(id, { asset_group, track_currency, style }) {
+    const inst = state.instruments.find(x => x.id === id);
+    if (!inst) throw fail('종목을 찾을 수 없습니다.');
+    if (asset_group !== undefined) {
+      if (asset_group && !Groups.has(asset_group)) throw fail('알 수 없는 자산군입니다.');
+      inst.asset_group = asset_group || null;
+    }
+    if (track_currency !== undefined) {
+      if (track_currency && !TrackCur.list.some(t => t.code === track_currency)) throw fail('알 수 없는 추종 통화입니다.');
+      inst.track_currency = track_currency && track_currency !== inst.currency ? track_currency : null; // 거래 통화와 같으면 비워 둠
+    }
+    if (style !== undefined) {
+      const s = style ? Styles.normalize(style) : null;
+      if (style && !s) throw fail('자산 성향 값이 올바르지 않습니다. (혼합은 성장 1~99%)');
+      inst.style = s;
+    }
     inst.updated_at = nowISO();
     markChanged(false); commit();
     return clone(inst);
@@ -1321,6 +1347,7 @@ window.DataService = (function () {
     getGroups, addGroup, updateGroup, moveGroup, deleteGroup,
     getInstruments, searchInstruments, addInstrument, updateInstrumentGroup,
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
+    updateInstrumentAttrs,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
     getSnapshots, getSnapshotItems, createDailySnapshot, startRealHistory, autoDailySnapshot, ensureHistory,

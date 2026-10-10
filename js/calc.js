@@ -105,5 +105,31 @@ window.Calc = (function () {
     return assemble(rows, accList, fx);
   }
 
-  return { pct, row, emptyAgg, add, view, buildModel, buildSnapshotModel };
+  // 금액을 비율만큼 나눈 행 (혼합 성향: 성55배45 → 성장 55% · 배당 45%)
+  function scaleRow(r, f) {
+    if (f === 1) return r;
+    const o = { ...r };
+    ['q', 'invO', 'valO', 'profO', 'invK', 'valK', 'profK', 'priceP', 'fxP'].forEach(k => { o[k] = r[k] * f; });
+    return o;
+  }
+  // 자산군 대신 다른 기준(추종 통화 · 자산 성향)으로 묶은 통계
+  // def = { list: [{code,name,color}], split(inst) → [[코드, 비율], ...] }  → { list, groups: {코드: {agg, insts}} }
+  function dimension(model, def) {
+    const groups = {};
+    def.list.forEach(d => (groups[d.code] = { code: d.code, agg: emptyAgg(), insts: {} }));
+    model.rows.forEach(x => {
+      def.split(x.inst).forEach(([code, f]) => {
+        const g = groups[code];
+        if (!g) return;
+        const r = scaleRow(x.r, f);
+        add(g.agg, r);
+        if (!g.insts[x.inst.id]) g.insts[x.inst.id] = { inst: x.inst, share: f, unassigned: false, noPrice: x.noPrice, agg: emptyAgg(), rows: [] };
+        add(g.insts[x.inst.id].agg, r);
+        g.insts[x.inst.id].rows.push({ ...x, r });
+      });
+    });
+    return { list: def.list, groups };
+  }
+
+  return { pct, row, emptyAgg, add, view, buildModel, buildSnapshotModel, scaleRow, dimension };
 })();

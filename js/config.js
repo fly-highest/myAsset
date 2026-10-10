@@ -7,7 +7,7 @@ window.APP_CONFIG = {
     { code: 'SP500', name: 'S&P500', color: '#17a589' },
     { code: 'OTHER_STOCK', name: '기타종목', color: '#8e5cc4' },
     { code: 'GOLD', name: '금', color: '#c9a227' },
-    { code: 'BLOCKCHAIN', name: '블록체인', color: '#ef7d22' }
+    { code: 'BLOCKCHAIN', name: 'Crypto', color: '#ef7d22' }
   ],
   ASSET_TYPES: ['ETF', 'STOCK', 'CRYPTO', 'GOLD', 'CASH'],
   CURRENCIES: ['KRW', 'USD'],
@@ -39,5 +39,56 @@ window.Groups = {
     if (!s) return null;
     const g = this.list.find(x => x.code === s.toUpperCase() || x.name.toUpperCase() === s.toUpperCase());
     return g ? g.code : undefined;
+  }
+};
+
+// 추종 통화 · 자산 성향 (종목 속성) — 자산 현황 화면의 '추종 통화별' · '자산 성향별' 통계에 사용
+// 거래 통화(currency) = 사고파는 통화, 추종 통화(track_currency) = 가격이 따라가는 통화 (비우면 거래 통화와 같음)
+window.TrackCur = {
+  list: [
+    { code: 'KRW', name: '원화 (KRW)', color: '#2f6fdf' },
+    { code: 'USD', name: '달러 (USD)', color: '#17a589' }
+  ],
+  of(inst) { const c = (inst && (inst.track_currency || inst.currency)) || 'KRW'; return this.list.some(x => x.code === c) ? c : 'KRW'; },
+  name(code) { const t = this.list.find(x => x.code === code); return t ? t.name : code; }
+};
+// 자산 성향: 성장 · 현금 · 배당 · 원자재 · Crypto, 그리고 성장/배당 혼합 'MIX_55' (= 성55배45 = 성장 55% + 배당 45%)
+// 비어 있으면 자산유형으로 기본값 (현금 → 현금, 가상자산 → Crypto, 금 → 원자재), 그 밖은 미지정
+window.Styles = {
+  list: [
+    { code: 'GROWTH', name: '성장', color: '#2f6fdf' },
+    { code: 'CASH', name: '현금', color: '#7f97a8' },
+    { code: 'DIVIDEND', name: '배당', color: '#17a589' },
+    { code: 'COMMODITY', name: '원자재', color: '#c9a227' },
+    { code: 'CRYPTO', name: 'Crypto', color: '#ef7d22' }
+  ],
+  UNSET: { code: 'UNSET', name: '미지정', color: '#b8bec8' },
+  PRESET_MIX: [50, 55], // 성50배50, 성55배45
+  // 저장값 정리: 'MIX_55' / '성55배45' / '성장' 등 → 코드 (알 수 없으면 null)
+  normalize(v) {
+    const s = String(v ?? '').trim();
+    if (!s) return null;
+    let m = s.match(/^MIX_(\d{1,3})$/i) || s.match(/^성\s*(\d{1,3})\s*배\s*(\d{1,3})$/);
+    if (m) { const g = +m[1]; if (m[2] !== undefined && g + +m[2] !== 100) return null; return g === 100 ? 'GROWTH' : g === 0 ? 'DIVIDEND' : g > 0 && g < 100 ? 'MIX_' + g : null; }
+    const hit = this.list.find(x => x.code === s.toUpperCase() || x.name === s);
+    return hit ? hit.code : null;
+  },
+  effective(inst) {
+    const c = this.normalize(inst && inst.style);
+    if (c) return c;
+    const t = inst && inst.asset_type;
+    return t === 'CASH' ? 'CASH' : t === 'CRYPTO' ? 'CRYPTO' : t === 'GOLD' ? 'COMMODITY' : 'UNSET';
+  },
+  isDefault(inst) { return !this.normalize(inst && inst.style); },
+  name(code) {
+    const m = String(code || '').match(/^MIX_(\d+)$/);
+    if (m) return `성${m[1]}배${100 - m[1]}`;
+    const s = this.list.find(x => x.code === code);
+    return s ? s.name : code === 'UNSET' ? '미지정' : code;
+  },
+  // 통계용 나눔: 혼합은 성장·배당에 비율대로 → [[코드, 비율], ...]
+  split(inst) {
+    const c = this.effective(inst), m = c.match(/^MIX_(\d+)$/);
+    return m ? [['GROWTH', m[1] / 100], ['DIVIDEND', (100 - m[1]) / 100]] : [[c, 1]];
   }
 };

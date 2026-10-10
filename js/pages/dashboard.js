@@ -21,7 +21,7 @@
       </div>
       <div class="sec grid-2">
         <div>
-          <div class="sec-hd"><h2>자산군별 요약</h2><a href="groups.html">자산군 현황에서 보기·관리 →</a></div>
+          <div class="sec-hd"><h2>자산군별 요약</h2><a href="groups.html">자산 현황에서 보기 →</a></div>
           ${UI.groupTable(model, mode)}
         </div>
         <div class="card pad">

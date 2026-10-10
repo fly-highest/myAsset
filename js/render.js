@@ -39,13 +39,13 @@ window.UI = (function () {
     return `<span class="price-cell" title="${esc(title)}">${Fmt.price(cp, inst.currency)}</span>${meta.source === 'MOCK' ? '<span class="tag-mock" title="실제 시세가 아닌 예시 가격">예시</span>' : meta.source === 'MANUAL' ? '<span class="tag-mock" title="직접 입력한 현재가">직접</span>' : ''}<div class="sub">${Fmt.mdhm(meta.as_of)}</div>`;
   }
 
-  // 자산군 표시 (계좌 관리 화면: 읽기 전용, 클릭 시 자산군 현황으로 이동)
+  // 자산군 표시 (계좌 관리 화면: 읽기 전용, 클릭 시 자산 현황으로 이동)
   function groupBadge(code, unassigned, { link = true } = {}) {
     const tag = link ? 'a' : 'span';
     if (unassigned) {
       return `<${tag} class="gbadge unassigned" ${link ? 'href="groups.html#OTHER_STOCK"' : ''} title="자산군 미지정 — 기타종목으로 집계됩니다">기타종목<small>미지정</small></${tag}>`;
     }
-    return `<${tag} class="gbadge" style="--c:${Groups.color(code)}" ${link ? `href="groups.html#${code}"` : ''} title="자산군 현황에서 보기">${Groups.name(code)}</${tag}>`;
+    return `<${tag} class="gbadge" style="--c:${Groups.color(code)}" ${link ? `href="groups.html#${code}"` : ''} title="자산 현황에서 보기">${Groups.name(code)}</${tag}>`;
   }
 
   // ---- 총합 카드 (10항) ----
@@ -87,7 +87,7 @@ window.UI = (function () {
   // ---- 계좌 → 보유 종목 트리 (12-1항). 계좌 관리 화면과 XLSX 업로드 미리보기에서 사용 ----
   function holdingsTree(model, mode, opts = {}) {
     const { editable = false, filterGroup = 'ALL', sortBy = 'default', collapsed = new Set(), showUpdated = editable, linkGroups = true, byBroker = false } = opts;
-    // showUpdated: 종목명 아래 '최종 수정' 표시 / linkGroups: 자산군 클릭 시 자산군 현황으로 이동
+    // showUpdated: 종목명 아래 '최종 수정' 표시 / linkGroups: 자산군 클릭 시 자산 현황으로 이동
     // groupBy: 계좌를 묶는 기준 'broker'(증권사) · 'type'(계좌종류) · 'name'(계좌명) · 없음. byBroker: true = 'broker'
     const groupBy = opts.groupBy || (byBroker ? 'broker' : null);
     const GROUP_KEY = {
@@ -233,11 +233,12 @@ window.UI = (function () {
   }
   window.addEventListener('resize', fitTree);
 
-  // ---- 자산 현황 표 (이력 '날짜별 자산 현황'·자산군 현황 '현재 자산 현황' 공용) ----
+  // ---- 자산 현황 표 (이력 '날짜별 자산 현황'·자산 현황 '현재 자산 현황' 공용) ----
   // entries: [{ label: '2026-10-09', sub: '08:00', tag: '', model }]  (model = Calc.buildModel / buildSnapshotModel 결과)
   // 총 평가·투자·손익·수익률·환율 + 자산군별 총액 7칸 → 자산군별 비중 7칸.
   // 혼합 모드는 줄마다 원화 줄 + 달러 줄 (비중은 그 통화 자산 안에서)
-  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap' } = {}) {
+  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap', list = Groups.list, dimLabel = '자산군' } = {}) {
+    // list·dimLabel: 자산군 대신 추종 통화·자산 성향으로 묶을 때 (model.groups 도 그 기준으로 묶은 값)
     const mixed = mode === 'MIXED';
     const gcell = (i, html) => `<td class="num${i === 0 ? ' g-first' : ''}">${html}</td>`;
     const labelCell = (e, span) => `<td class="nowrap sticky-col"${span ? ` rowspan="${span}"` : ''}>${esc(e.label)}${e.sub ? ` <span class="muted small">${esc(e.sub)}</span>` : ''}${e.tag ? ` <span class="tag">${esc(e.tag)}</span>` : ''}</td>`;
@@ -245,8 +246,8 @@ window.UI = (function () {
       const m = e.model;
       if (!mixed) {
         const v = Calc.view(m.total, mode, m.fx);
-        const amounts = Groups.list.map((g, i) => gcell(i, amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val'))).join('');
-        const weights = Groups.list.map((g, i) => gcell(i, Fmt.weight(w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
+        const amounts = list.map((g, i) => gcell(i, amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val'))).join('');
+        const weights = list.map((g, i) => gcell(i, Fmt.weight(w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
         return `<tr>${labelCell(e)}
           <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v, { split: false })}</td><td class="num">${ret(v)}</td>
           <td class="num">${Fmt.fx(m.fx || 0)}</td>${amounts}${weights}</tr>`;
@@ -254,8 +255,8 @@ window.UI = (function () {
       return [['KRW', '원화', 'kr'], ['USD', '달러', 'us']].map(([cur, label, k], idx) => {
         const t = m.total[k], p = t.val - t.inv, r = Calc.pct(p, t.inv);
         const has = a => (k === 'kr' ? a.nKR : a.nUS);
-        const amounts = Groups.list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.money(a[k].val, cur) : '<span class="muted">—</span>'); }).join('');
-        const weights = Groups.list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.weight(w(a[k].val, t.val)) : '<span class="muted">—</span>'); }).join('');
+        const amounts = list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.money(a[k].val, cur) : '<span class="muted">—</span>'); }).join('');
+        const weights = list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.weight(w(a[k].val, t.val)) : '<span class="muted">—</span>'); }).join('');
         return `<tr class="${idx === 0 ? 'pair-top' : 'pair-bottom'}">${idx === 0 ? labelCell(e, 2) : ''}
           <td class="cur-col">${label}</td>
           <td class="num">${Fmt.money(t.val, cur)}</td><td class="num">${Fmt.money(t.inv, cur)}</td>
@@ -268,12 +269,12 @@ window.UI = (function () {
         <tr>
           <th rowspan="2" class="sticky-col">${firstHeader}</th>${mixed ? '<th rowspan="2">통화</th>' : ''}<th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
           <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
-          <th colspan="${Groups.list.length}" class="center g-first">자산군별 총액</th>
-          <th colspan="${Groups.list.length}" class="center g-first">자산군별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
+          <th colspan="${list.length}" class="center g-first">${dimLabel}별 총액</th>
+          <th colspan="${list.length}" class="center g-first">${dimLabel}별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
         </tr>
-        <tr>${[0, 1].map(() => Groups.list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
+        <tr>${[0, 1].map(() => list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
       </thead>
-      <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + Groups.list.length * 2}" class="muted">${empty}</td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + list.length * 2}" class="muted">${empty}</td></tr>`}</tbody>
     </table></div>`;
   }
 

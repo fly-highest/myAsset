@@ -21,7 +21,7 @@
     lastView = { snaps, models, fromVal: snaps[0] ? snaps[0].snapshot_date : '', toVal: snaps.length ? snaps[snaps.length - 1].snapshot_date : '' };
     const last = snaps[snaps.length - 1];
 
-    // 날짜별 자산 현황 표 (최근 날짜가 위) — 자산군 현황 화면과 같은 양식 (UI.statusTable)
+    // 날짜별 자산 현황 표 (최근 날짜가 위) — 자산 현황 화면과 같은 양식 (UI.statusTable)
     const table = UI.statusTable(snaps.map((s, i) => ({ label: s.snapshot_date, sub: s.snapshot_time, tag: s.initial ? '최초 데이터' : s.simulated ? '시뮬레이션' : '', model: models[i] })).reverse(), mode, { empty: '스냅샷이 없습니다' });
 
     document.getElementById('main').innerHTML = `
