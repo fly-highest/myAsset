@@ -108,11 +108,25 @@
     const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율' };
     const p = FX_PERIODS.find(x => x[0] === fxPeriod);
     const last = hist.length ? hist[hist.length - 1].date : Fmt.todayKST();
-    let from;
-    if (p[0] === '1W') from = Fmt.addDays(last, -p[2]);
-    else { const d = new Date(last + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - p[2]); from = d.toISOString().slice(0, 10); }
-    const rows = hist.filter(r => r.date > from);
-    const avg = rows.length ? rows.reduce((s, r) => s + r.close, 0) / rows.length : null;
+    // 어떤 날짜에서 기간만큼 거슬러 간 날 (그 날은 빼고 다음 날부터가 기간)
+    const startOf = d => {
+      if (p[0] === '1W') return Fmt.addDays(d, -p[2]);
+      const x = new Date(d + 'T00:00:00Z'); x.setUTCMonth(x.getUTCMonth() - p[2]); return x.toISOString().slice(0, 10);
+    };
+    // 이동평균: 날짜마다 그 날부터 기간만큼 거슬러 올라간 종가의 평균
+    // (예: 3년 · 2025-10-10 → 2022-10-11 ~ 2025-10-10 종가 평균). 저장된 데이터가 기간보다 짧은 날은 그리지 않음
+    const ma = [];
+    let j = 0, sum = 0;
+    hist.forEach((r, i) => {
+      sum += r.close;
+      const s = startOf(r.date);
+      while (hist[j].date <= s) { sum -= hist[j].close; j++; }
+      ma.push({ v: sum / (i - j + 1), full: hist[0].date <= s });
+    });
+    const from = startOf(last);
+    const i0 = hist.findIndex(r => r.date > from);
+    const rows = i0 < 0 ? [] : hist.slice(i0), maRows = i0 < 0 ? [] : ma.slice(i0);
+    const avg = rows.length ? rows.reduce((s, r) => s + r.close, 0) / rows.length : null; // 위쪽 칸: 최근 기간(차트에 보이는 기간)의 단순 평균
     const hi = rows.length ? Math.max(...rows.map(r => r.close)) : null, lo = rows.length ? Math.min(...rows.map(r => r.close)) : null;
     const diffPct = avg ? (now.rate / avg - 1) * 100 : null;
     el.innerHTML = `
@@ -128,7 +142,7 @@
             <div class="stat-sub">${avg ? `${now.rate >= avg ? '+' : '−'}${fx2(Math.abs(now.rate - avg))} · 기간 최고 ${fx2(hi)} / 최저 ${fx2(lo)}` : ''}</div></div>
         </div>
         <div class="chart-box" style="height:260px"><canvas id="ch-fx"></canvas></div>
-        <p class="small muted" style="margin:6px 0 0">일별 종가 (2016-10-10부터 저장, 평일마다 자동 추가) · 점선 = ${p[1]} 평균</p>
+        <p class="small muted" style="margin:6px 0 0">일별 종가 (2016-10-10부터 저장, 평일마다 자동 추가) · 점선 = ${p[1]} 이동평균 (날짜마다 그 날부터 ${p[1]} 전까지의 종가 평균)</p>
       </div>`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
       fxPeriod = b.dataset.fxp;
@@ -142,7 +156,7 @@
         labels: rows.map(r => r.date),
         datasets: [
           { label: 'USD/KRW', data: rows.map(r => r.close), borderColor: '#2457d6', backgroundColor: '#2457d6', borderWidth: 1.8, pointRadius: rows.length <= 31 ? 2 : 0, tension: 0.1 },
-          { label: `${p[1]} 평균`, data: rows.map(() => avg), borderColor: '#d9434f', borderWidth: 1.4, borderDash: [6, 4], pointRadius: 0 }
+          { label: `${p[1]} 이동평균`, data: maRows.map(m => (m.full ? m.v : null)), borderColor: '#d9434f', borderWidth: 1.6, borderDash: [6, 4], pointRadius: 0, tension: 0.1 }
         ]
       },
       options: {
