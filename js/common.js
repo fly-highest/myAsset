@@ -11,7 +11,8 @@ window.App = (function () {
     { key: 'accounts', href: 'accounts.html', label: '계좌 현황' },
     { key: 'history', href: 'history.html', label: '이력' },
     { key: 'manage', href: 'manage.html', label: '계좌/자산관리' },
-    { key: 'invest', href: 'invest.html', label: '투자' }
+    { key: 'invest', href: 'invest.html', label: '투자' },
+    { key: 'market', href: 'market.html', label: '시장 지표' }
   ];
   // 배포 버전 확인: 브라우저가 예전 화면 파일을 기억하고 있으면 최신 버전으로 한 번 새로고침합니다.
   // (이 파일 주소의 ?v= 값과 서버의 version.txt 를 비교. 배포할 때마다 둘을 같이 올립니다)
