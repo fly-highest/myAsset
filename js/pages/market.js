@@ -6,7 +6,7 @@
   const FX_PERIODS = [['1W', '1주', 7], ['1M', '1개월', 1], ['3M', '3개월', 3], ['1Y', '1년', 12], ['3Y', '3년', 36], ['5Y', '5년', 60]];
   const FX_KEY = 'myAsset.invest.fxPeriod';
   let fxPeriod = '1Y';
-  try { const s = localStorage.getItem(FX_KEY); if (FX_PERIODS.some(p => p[0] === s)) fxPeriod = s; } catch (e) { /* 무시 */ }
+  try { const s = localStorage.getItem(FX_KEY); if (s === 'MAX' || FX_PERIODS.some(p => p[0] === s)) fxPeriod = s; } catch (e) { /* 무시 */ }
   const dec2 = v => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fx2 = v => '₩' + dec2(v);
   const usd = v => '$' + dec2(v), usdTick = v => '$' + Number(v).toLocaleString('ko-KR');
@@ -106,10 +106,10 @@
   async function marketSection() {
     const el = document.getElementById('mkt-sec');
     if (!el) return;
-    const p = FX_PERIODS.find(x => x[0] === fxPeriod);
+    const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~5년 + 최대
     el.innerHTML = `
       <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · KB 선도50</span></h2>
-        <div class="seg" role="group" aria-label="평균 기간">${FX_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="seg" role="group" aria-label="평균 기간">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
       fxPeriod = b.dataset.fxp;
@@ -132,7 +132,7 @@
       ${m.band ? box('band', '200일 ±1%', BAND) : ''}</div>`;
   }
 
-  // 차트별 표시 기간: 위쪽 버튼(1주~5년)과 같은 목록 + '최대'(저장된 전체). 고르면 그 차트만 바뀌고 이 브라우저에 기억
+  // 차트별 표시 기간: 위쪽 버튼과 같은 목록(1주~5년) + '최대'(저장된 전체). 고르면 그 차트만 바뀌고 이 브라우저에 기억
   const CHART_PERIODS = [...FX_PERIODS, ['MAX', '최대', null]];
   const CP_KEY = id => 'myAsset.market.period.' + id;
   function chartPeriod(m) {
