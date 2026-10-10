@@ -95,7 +95,7 @@
 
   // 표시 구간(기간 버튼)의 자료 + 기간 단순 평균·최고·최저
   function seriesCalc(hist, p) {
-    const startOf = d => (p[0] === '1W' ? Fmt.addDays(d, -p[2]) : monthsBack(d, p[2]));
+    const startOf = d => (p[0] === 'MAX' ? '0000-00-00' : p[0] === '1W' ? Fmt.addDays(d, -p[2]) : monthsBack(d, p[2]));
     const last = hist.length ? hist[hist.length - 1].date : Fmt.todayKST();
     const rows = hist.filter(r => r.date > startOf(last));
     const avg = rows.length ? rows.reduce((s, r) => s + r.close, 0) / rows.length : null;
@@ -114,6 +114,7 @@
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
       fxPeriod = b.dataset.fxp;
       try { localStorage.setItem(FX_KEY, fxPeriod); } catch (e) { /* 무시 */ }
+      MARKETS.forEach(m => setChartPeriod(m, null)); // 위쪽 버튼 = 모든 차트를 같은 기간으로 (차트별 선택 해제)
       marketSection();
     });
     lastNow = await DataService.getFxRate();
@@ -131,8 +132,18 @@
       ${m.band ? box('band', '200일 ±1%', BAND) : ''}</div>`;
   }
 
-  // 한 영역(카드) 그리기: 위쪽 숫자 칸 + 이동평균 체크박스 + 차트
-  async function marketPanel(m, p) {
+  // 차트별 표시 기간: 위쪽 버튼(1주~5년)과 같은 목록 + '최대'(저장된 전체). 고르면 그 차트만 바뀌고 이 브라우저에 기억
+  const CHART_PERIODS = [...FX_PERIODS, ['MAX', '최대', null]];
+  const CP_KEY = id => 'myAsset.market.period.' + id;
+  function chartPeriod(m) {
+    try { const s = localStorage.getItem(CP_KEY(m.id)); return CHART_PERIODS.find(x => x[0] === s) || null; } catch (e) { return null; }
+  }
+  function setChartPeriod(m, key) { try { key ? localStorage.setItem(CP_KEY(m.id), key) : localStorage.removeItem(CP_KEY(m.id)); } catch (e) { /* 무시 */ } }
+
+  // 한 영역(카드) 그리기: 제목 + 차트별 기간 버튼 · 위쪽 숫자 칸 + 이동평균 체크박스 + 차트
+  async function marketPanel(m, pTop) {
+    const own = chartPeriod(m), p = own || pTop;
+    const pName = p[0] === 'MAX' ? '전체 기간' : p[1];
     const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율', CSV: 'Investing.com', YAHOO: 'Yahoo Finance', TREASURY: '미 재무부', UPBIT: '업비트', NAVER: '네이버 금융', KB: 'KB부동산', FRED: 'FRED', CALC: '계산값' };
     const now = lastNow || await DataService.getFxRate();
     const data = await Promise.all(m.series.map(async s => {
@@ -174,23 +185,28 @@
         return `<div class="fx-stats">
           <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}</div>
             <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div></div>
-          <div><div class="stat-t">${name}${p[1]} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
+          <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
             <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
-          <div><div class="stat-t">${name}현재 − ${p[1]} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
+          <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
             <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.diffAbs ? dec2(Math.abs(cur.v - c.avg)) + '%p' : m.fmt(Math.abs(cur.v - c.avg))} · 기간 최고 ${m.fmt(c.hi)} / 최저 ${m.fmt(c.lo)}` : ''}</div></div>
         </div>`;
       }).join('');
     }
 
     const unit = m.everyDay ? '날짜(주말 포함)' : '거래일';
-    box.innerHTML = `<h3 class="sec-sub" style="margin-top:0">${m.title}</h3>
+    box.innerHTML = `<div class="mkt-hd"><h3 class="sec-sub" style="margin:0">${m.title}</h3>
+        <div class="seg seg-sm" role="group" aria-label="이 차트의 기간" title="이 차트만 기간을 바꿉니다 (위쪽 기간 버튼을 누르면 모든 차트가 다시 같은 기간)">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-cp="${k}" class="${k === p[0] ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${stats}
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">${m.monthly ? `월간 자료 (${m.since}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${m.since}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     box.querySelectorAll('[data-ma]').forEach(cb => cb.onchange = () => {
       const next = [...box.querySelectorAll('[data-ma]:checked')].map(x => x.dataset.ma);
       saveMa(m, next);
-      marketPanel(m, p);
+      marketPanel(m, pTop);
+    });
+    box.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => {
+      setChartPeriod(m, b.dataset.cp);
+      marketPanel(m, pTop);
     });
 
     // 차트: 여러 지표(WTI·브렌트유)는 날짜를 합쳐 한 차트에 그림

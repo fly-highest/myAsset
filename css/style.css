@@ -369,3 +369,6 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .ma-chart .ma-title { font-weight: 600; margin-right: 2px; }
 .ma-chart .ma-pick input { width: 12px; height: 12px; }
 .ma-chart .ma-swatch { width: 10px; height: 3px; }
+/* 시장 지표: 차트 제목 + 차트별 기간 버튼 */
+.mkt-hd { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.seg.seg-sm button { padding: 3px 8px; font-size: 12px; }
