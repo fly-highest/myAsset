@@ -61,7 +61,7 @@
         if (dim === 'style' && Styles.isDefault(inst) && g.code !== 'UNSET') mark += ' <span class="muted small" title="자산 성향을 정하지 않아 자산유형으로 정한 값">(기본값)</span>';
         if (dim === 'track' && inst.track_currency && inst.track_currency !== inst.currency) mark = ` <span class="muted small">거래 ${esc(inst.currency)}</span>`;
         body += `<tr class="i-row ${I.unassigned && dim === 'group' ? 'unassigned' : ''}">
-          <td><button type="button" class="tg" data-tg-inst="${esc(key)}">${io ? '▾' : '▸'}</button><b>${esc(inst.name)}</b>
+          <td><button type="button" class="tg" data-tg-inst="${esc(key)}">${io ? '▾' : '▸'}</button><b class="nm-clip" title="${esc(inst.name)}${inst.eng_name ? ' &#10;' + esc(inst.eng_name) : ''}">${esc(inst.name)}</b>
             <span class="muted small">${esc(inst.symbol)}</span>${mark}
             <span class="tag">${I.rows.length}계좌</span></td>
           <td class="num">${Fmt.qty(I.agg.q, inst)}</td>
