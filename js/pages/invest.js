@@ -182,9 +182,9 @@
         <div><div class="stat-t">50일선</div><div class="stat-v">${ma50[L] ? m.fmt(ma50[L]) : '—'}</div>
           <div class="stat-sub">${ma50[L] ? `현재 − 50일선 <span class="${Fmt.cls(pct(last.close, ma50[L]), 'PCT')}">${Fmt.pct(pct(last.close, ma50[L]))}</span>` : ''}</div></div>
         <div><div class="stat-t">200일선</div><div class="stat-v">${ma200[L] ? m.fmt(ma200[L]) : '—'}</div>
-          <div class="stat-sub">${ma200[L] ? `+1% ${m.fmt(ma200[L] * 1.01)} / −1% ${m.fmt(ma200[L] * 0.99)}` : ''}</div></div>
+          <div class="stat-sub">${ma200[L] && m.band !== false ? `+1% ${m.fmt(ma200[L] * 1.01)} / −1% ${m.fmt(ma200[L] * 0.99)}` : ''}</div></div>
         <div><div class="stat-t">현재 − 200일선</div><div class="stat-v">${d200 == null ? '—' : `<span class="${Fmt.cls(d200, 'PCT')}">${Fmt.pct(d200)}</span>`}</div>
-          <div class="stat-sub">${zone}</div></div>
+          <div class="stat-sub">${m.band === false ? '' : zone}</div></div>
       </div>
       <div class="chart-box" style="height:280px"><canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, 평일마다 자동 추가) · 이동평균은 거래일 기준 50일·200일 (기간 버튼은 보이는 구간만 바꿈) ${m.band === false ? '' : ' · 점선 = 200일선 ±1%'}</p>`;
