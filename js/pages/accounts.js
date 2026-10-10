@@ -21,7 +21,7 @@
     main.innerHTML = `
       <div class="page-hd">
         <div><h1>계좌 현황</h1><p class="desc">계좌별 보유 종목 현황입니다 (조회 전용). 수정은 <a href="manage.html#accounts">계좌/자산관리 › 계좌 관리</a>에서 합니다.</p></div>
-        <div class="toolbar"><button type="button" class="btn" id="btn-xlsx" title="계좌·보유 현황을 원화환산·달러환산·통화별 3개 탭으로 내려받습니다">엑셀 다운로드</button></div>
+        <div class="toolbar"><button type="button" class="btn" id="btn-xlsx" title="계좌·보유 현황을 원화환산·달러환산·통화별·금환산 4개 탭으로 내려받습니다">엑셀 다운로드</button></div>
       </div>
       ${App.statusBar(status)}
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
@@ -64,7 +64,7 @@
           <label class="check" style="margin-top:6px"><input type="checkbox" id="xr-now" checked> 끝 날짜가 오늘이면 오늘은 08:00 이력 대신 현재 데이터로</label>
           <div class="small muted" id="xr-cnt" style="margin-top:6px"></div>
         </div>
-        <p class="small muted" style="margin:0">이력은 ${first}부터 있습니다. 탭 3개(원화환산·달러환산·통화별), 맨 왼쪽 '기준시각' 열로 시점을 구분합니다.</p>
+        <p class="small muted" style="margin:0">이력은 ${first}부터 있습니다. 탭 4개(원화환산·달러환산·통화별·금환산), 맨 왼쪽 '기준시각' 열로 시점을 구분합니다.</p>
         <div class="notice" id="xr-err" hidden></div></div>`,
       buttons: [{ label: '취소' }, {
         label: '다운로드', kind: 'primary', onClick: async api => {
@@ -108,8 +108,8 @@
     const SRC = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 환산', MANUAL: '직접 입력', MOCK: '예시 가격' };
     const pct = (a, b) => (b ? (a / b) * 100 : 0);
     const r2 = v => Math.round(v * 100) / 100;
-    const money = (v, cur) => (cur === 'USD' ? r2(v) : Math.round(v));
-    const curLabel = c => (c === 'USD' ? 'USD($)' : 'KRW(₩)');
+    const money = (v, cur) => (cur === 'USD' || cur === 'XAU' ? r2(v) : Math.round(v));
+    const curLabel = c => (c === 'USD' ? 'USD($)' : c === 'XAU' ? '금(g)' : 'KRW(₩)');
     const accNow = Object.fromEntries((await DataService.getAccounts()).map(a => [a.id, a])); // 이력 행의 증권사·계좌종류는 지금 계좌 정보로
 
     // 시점 목록: 이력 스냅샷(오래된 순) → 현재
@@ -117,14 +117,15 @@
     for (const s of snaps) {
       const model = Calc.buildSnapshotModel(await DataService.getSnapshotItems(s.id));
       entries.push({
-        stamp: snapStamp(s), model, priceAt: `${s.snapshot_date} ${s.snapshot_time}`, src: () => '이력 스냅샷',
+        stamp: snapStamp(s), model, gold: s.xau_usd || await DataService.xauOn(s.snapshot_date), // 금환산: 그날 국제 금시세
+        priceAt: `${s.snapshot_date} ${s.snapshot_time}`, src: () => '이력 스냅샷',
         acc: a => { const n = accNow[a.id] || {}; return { broker: n.broker || '', type: n.account_type || '' }; }
       });
     }
     if (current) {
       const ps = await DataService.getPriceStatus();
       entries.push({
-        stamp: kstStamp(ps.latestAsOf || new Date()), model: last.model, priceAt: null,
+        stamp: kstStamp(ps.latestAsOf || new Date()), model: last.model, gold: last.model.gold, priceAt: null,
         src: x => (x.priceMeta ? (SRC[x.priceMeta.source] || x.priceMeta.source) : (x.inst.asset_type === 'CASH' ? '현금' : '')),
         acc: a => ({ broker: a.broker || '', type: (a.account && a.account.account_type) || '' })
       });
@@ -139,15 +140,17 @@
     const C = { cur: 8, ap: 10, cp: 12, val: 15, inv: 16, prof: 17 };
 
     function sheet(mode, title) {
-      const note = { KRW: '모든 금액을 원화(₩)로 환산 · 손익은 환차손익 포함', USD: '원화 환산 금액을 그 시점 환율로 나눈 달러($) · 수익률은 원화 기준과 같음', MIXED: '원화 종목은 ₩, 달러 종목은 원래 통화 $ (환차손익 제외) · 전체 합계는 통화별로 나눠 표시' }[mode];
-      const out = [[`[${title}] ${note}`], [info], ['기준시각', ...HEAD]];
+      const note = { KRW: '모든 금액을 원화(₩)로 환산 · 손익은 환차손익 포함', USD: '원화 환산 금액을 그 시점 환율로 나눈 달러($) · 수익률은 원화 기준과 같음', MIXED: '원화 종목은 ₩, 달러 종목은 원래 통화 $ (환차손익 제외) · 전체 합계는 통화별로 나눠 표시',
+        GOLD: '금의 양(g): 달러 종목 = 달러 ÷ 국제 금시세, 원화 종목·현물금 = 그 시점 환율로 달러 전환 후 ÷ 금시세 (투자금액도 같은 규칙) · 수익률 = 금 기준, 옆 칸 = 원화 기준' }[mode];
+      const goldNote = mode === 'GOLD' ? ' · 국제 금시세(달러/온스): ' + entries.map(e => `${e.stamp} $${e.gold ? Fmt.plain(e.gold, 2) : '—'}`).join(', ') : '';
+      const out = [[`[${title}] ${note}`], [info + goldNote], ['기준시각', ...HEAD]];
       entries.forEach(e => {
         const model = e.model, total = model.total.valK;
         model.accounts.forEach(acc => {
           const ai = e.acc(acc);
           acc.rows.forEach(x => {
             const i = x.inst, r = x.r, isUSD = i.currency === 'USD', isCash = i.asset_type === 'CASH';
-            const v = Calc.view(Calc.add(Calc.emptyAgg(), r), mode, model.fx), p = v.parts[0];
+            const v = Calc.view(Calc.add(Calc.emptyAgg(), r), mode, model.fx, e.gold), p = v.parts[0];
             const priceAt = e.priceAt || (x.priceMeta ? Fmt.mdhm(x.priceMeta.as_of) : '');
             out.push([e.stamp, acc.name, ai.broker, ai.type, '종목', i.name, i.symbol, i.exchange,
               x.unassigned ? '기타종목(미지정)' : Groups.name(x.group), curLabel(p.cur),
@@ -155,13 +158,13 @@
               isCash ? '' : priceAt, e.src(x),
               money(p.val, p.cur), money(p.inv, p.cur), money(p.prof, p.cur),
               v.split ? Math.round(v.split.priceP) : '', v.split ? Math.round(v.split.fxP) : '',
-              r2(p.ret), v.refRetK != null ? r2(v.refRetK) : '', r2(pct(r.valK, total))]);
+              r2(p.ret), v.refRetK != null ? r2(v.refRetK) : mode === 'GOLD' ? r2(pct(r.profK, r.invK)) : '', r2(pct(r.valK, total))]);
           });
         });
-        const tv = Calc.view(model.total, mode, model.fx);
+        const tv = Calc.view(model.total, mode, model.fx, e.gold);
         tv.parts.forEach(p => out.push([e.stamp, '전체 합계', '', '', '전체 합계', '', '', '', '', curLabel(p.cur), '', '', '', '', '', '',
           money(p.val, p.cur), money(p.inv, p.cur), money(p.prof, p.cur),
-          tv.split ? Math.round(tv.split.priceP) : '', tv.split ? Math.round(tv.split.fxP) : '', r2(p.ret), '', total ? 100 : 0]));
+          tv.split ? Math.round(tv.split.priceP) : '', tv.split ? Math.round(tv.split.fxP) : '', r2(p.ret), mode === 'GOLD' ? r2(pct(model.total.profK, model.total.invK)) : '', total ? 100 : 0]));
       });
       return out;
     }
@@ -169,7 +172,7 @@
     const F = UI.XF;
     const fmt = (row, c) => {
       if (row[3] !== '종목' && row[3] !== '전체 합계') return null;
-      if (c === C.val || c === C.inv || c === C.prof) return row[C.cur] === 'USD($)' ? F.usd : F.krw;
+      if (c === C.val || c === C.inv || c === C.prof) return row[C.cur] === 'USD($)' ? F.usd : row[C.cur] === '금(g)' ? F.gold : F.krw;
       if (c === C.ap || c === C.cp) return typeof row[11] === 'number' ? F.usd : F.krw; // 매입환율이 있으면 달러 종목
       if (c === 9) return Number.isInteger(row[9]) ? F.krw : F.qty; // 정수 수량은 소수점 없이
       if (c === 11) return F.fx;
@@ -183,7 +186,8 @@
     UI.downloadXlsx(`myAsset_계좌현황_${name}.xlsx`, [
       { name: '원화환산', rows: sheet('KRW', '원화환산'), widths, formatFn },
       { name: '달러환산', rows: sheet('USD', '달러환산'), widths, formatFn },
-      { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn }
+      { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn },
+      { name: '금환산', rows: sheet('GOLD', '금환산'), widths, formatFn }
     ]);
   }
 

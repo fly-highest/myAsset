@@ -304,7 +304,7 @@ window.UI = (function () {
     XLSX.writeFile(wb, fileName);
   }
   // 엑셀 숫자 형식
-  const XF = { krw: '#,##0', usd: '#,##0.00', orig: '#,##0.##', fx: '#,##0.00', pct: '0.00"%"', qty: '#,##0.0#######' };
+  const XF = { krw: '#,##0', usd: '#,##0.00', orig: '#,##0.##', fx: '#,##0.00', pct: '0.00"%"', qty: '#,##0.0#######', gold: '#,##0.00"g"' };
 
   // ---- Chart.js 도우미 (다시 그릴 때 이전 차트 제거) ----
   function chart(canvasId, config) {

@@ -53,7 +53,7 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별 3개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산 4개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
         ${table}
       </div>`;
 
@@ -131,24 +131,27 @@
     if (!snaps.length) { App.toast('내려받을 스냅샷이 없습니다.', 'error'); return; }
     const F = UI.XF, r2 = v => Math.round(v * 100) / 100;
     const pct = (a, b) => (b ? (a / b) * 100 : 0);
-    const money = (v, c) => (c === 'USD' ? r2(v) : Math.round(v));
+    const money = (v, c) => (c === 'USD' || c === 'XAU' ? r2(v) : Math.round(v));
+    const curName = c => (c === 'USD' ? 'USD($)' : c === 'XAU' ? '금(g)' : 'KRW(₩)');
     const gNames = Groups.list.map(g => g.name);
     const info = `기간 ${fromVal} ~ ${toVal} (${snaps.length}일) · 자산군은 스냅샷 당시 분류 · 각 날짜 08:00 스냅샷의 당시 가격·환율·매입환율로 계산 · 내려받은 시각 ${Fmt.mdhm(new Date().toISOString())}`;
     const ordered = snaps.map((s, i) => ({ s, m: models[i] })).reverse();
 
     function sheet(mode, title) {
       const mixed = mode === 'MIXED';
-      const note = { KRW: '금액 = 원화(₩) · 비중 = 원화 환산 기준 전체 대비', USD: '금액 = 그날 환율로 나눈 달러($) · 비중 = 원화 환산 기준 전체 대비', MIXED: '원화 줄 = 원화 자산만(₩), 달러 줄 = 달러 자산만($) · 비중 = 그 통화 자산 안에서' }[mode];
+      const note = { KRW: '금액 = 원화(₩) · 비중 = 원화 환산 기준 전체 대비', USD: '금액 = 그날 환율로 나눈 달러($) · 비중 = 원화 환산 기준 전체 대비', MIXED: '원화 줄 = 원화 자산만(₩), 달러 줄 = 달러 자산만($) · 비중 = 그 통화 자산 안에서',
+        GOLD: '금액 = 금의 양(g): 달러 자산 = 달러 ÷ 그날 국제 금시세, 원화 자산·현물금 = 그날 환율로 달러 전환 후 ÷ 금시세 · 수익률 = 금 기준 · 비중 = 원화 환산 기준 · 그날 금시세(달러/온스)는 맨 오른쪽 칸' }[mode];
       const rows = [[`[${title}] ${note}`], [info],
         ['날짜', '시각', '표시 통화', '총 평가금액', '총 투자금액', '총 손익', '총 수익률(%)', '환율(USD/KRW)',
-          ...gNames.map(n => `${n} 총액`), ...gNames.map(n => `${n} 비중(%)`)]];
+          ...gNames.map(n => `${n} 총액`), ...gNames.map(n => `${n} 비중(%)`), ...(mode === 'GOLD' ? ['국제 금시세(달러/온스)'] : [])]];
       ordered.forEach(({ s, m }) => {
         if (!mixed) {
-          const c = mode === 'USD' ? 'USD' : 'KRW';
           const v = Calc.view(m.total, mode, m.fx, m.gold).parts[0];
-          rows.push([s.snapshot_date, s.snapshot_time, c === 'USD' ? 'USD($)' : 'KRW(₩)', money(v.val, c), money(v.inv, c), money(v.prof, c), r2(v.ret), m.fx,
+          const c = v.cur; // KRW · USD · XAU(금 g, 금 시세가 없으면 KRW)
+          rows.push([s.snapshot_date, s.snapshot_time, curName(c), money(v.val, c), money(v.inv, c), money(v.prof, c), r2(v.ret), m.fx,
             ...Groups.list.map(g => money(Calc.view(m.groups[g.code].agg, mode, m.fx, m.gold).parts[0].val, c)),
-            ...Groups.list.map(g => r2(pct(m.groups[g.code].agg.valK, m.total.valK)))]);
+            ...Groups.list.map(g => r2(pct(m.groups[g.code].agg.valK, m.total.valK))),
+            ...(mode === 'GOLD' ? [m.gold || ''] : [])]);
           return;
         }
         [['KRW', 'kr'], ['USD', 'us']].forEach(([c, k]) => {
@@ -164,9 +167,10 @@
     // 셀 형식: 금액은 그 행의 표시 통화(₩ 정수 / $ 소수 2자리)
     const nG = gNames.length;
     const formatFn = (row, c) => {
-      if (row[2] !== 'KRW(₩)' && row[2] !== 'USD($)') return null;
-      const isUsd = row[2] === 'USD($)';
-      if ((c >= 3 && c <= 5) || (c >= 8 && c < 8 + nG)) return isUsd ? F.usd : F.krw;
+      if (row[2] !== 'KRW(₩)' && row[2] !== 'USD($)' && row[2] !== '금(g)') return null;
+      const isUsd = row[2] === 'USD($)', isGold = row[2] === '금(g)';
+      if ((c >= 3 && c <= 5) || (c >= 8 && c < 8 + nG)) return isUsd ? F.usd : isGold ? F.gold : F.krw;
+      if (isGold && c === 8 + 2 * nG) return F.usd; // 국제 금시세
       if (c === 6 || c >= 8 + nG) return F.pct;
       if (c === 7) return F.fx;
       return null;
@@ -175,7 +179,8 @@
     UI.downloadXlsx(`myAsset_이력_${fromVal}_${toVal}.xlsx`, [
       { name: '원화환산', rows: sheet('KRW', '원화환산'), widths, formatFn },
       { name: '달러환산', rows: sheet('USD', '달러환산'), widths, formatFn },
-      { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn }
+      { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn },
+      { name: '금환산', rows: sheet('GOLD', '금환산'), widths: [...widths, 14], formatFn }
     ]);
   }
 
