@@ -46,7 +46,10 @@
     { id: 'kr3y', title: '한국 국채 3년 (%)', fmt: pctFmt, tick: v => v + '%', since: '2023-10-11', ma: [], diffAbs: true,
       series: [{ pair: 'KR3Y', label: '국채 3년', color: PRICE }] },
     { id: 'kb50', title: 'KB 선도아파트 50 지수 (월간, 2008-12~)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2008-12', ma: ['y1'], monthly: true,
-      series: [{ pair: 'KB_LEAD50', label: 'KB 선도50', color: PRICE }] }
+      series: [{ pair: 'KB_LEAD50', label: 'KB 선도50', color: PRICE }] },
+    // PIR = 아파트 가격 ÷ 연소득 (KB 아파트담보대출 기준, 중간값) → 소득을 한 푼도 안 쓰고 몇 년 모아야 집을 사는지
+    { id: 'pir', title: '소득 대비 주택가격 PIR (KB 아파트담보대출, 배 · 분기, 2008~) · 연소득을 몇 년 모아야 아파트를 사는지', fmt: v => dec2(v) + '배', tick: v => v + '배', since: '2008-03', ma: [], monthly: true, quarterly: true,
+      series: [{ pair: 'KB_PIR_SEOUL', label: '서울', color: PRICE }, { pair: 'KB_PIR_GG', label: '경기', color: PRICE2 }] }
   ];
   function pctFmt(v) { return dec2(v) + '%'; }
   function ppFmt(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + dec2(Math.abs(v)) + '%'; }
@@ -117,7 +120,7 @@
     if (!el) return;
     const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~10년 + 최대
     el.innerHTML = `
-      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · 금/은 · KB 선도50</span></h2>
+      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · 금/은 · KB 선도50 · PIR</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
@@ -195,7 +198,7 @@
           <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}</div>
             <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div></div>
           <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
-            <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
+            <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.quarterly ? '개 분기' : m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
           <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
             <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.diffAbs ? dec2(Math.abs(cur.v - c.avg)) + '%p' : m.fmt(Math.abs(cur.v - c.avg))} · 기간 최고 ${m.fmt(c.hi)} / 최저 ${m.fmt(c.lo)}` : ''}</div></div>
         </div>`;
@@ -208,7 +211,7 @@
         <div class="seg seg-sm" role="group" aria-label="이 차트의 기간" title="이 차트만 기간을 바꿉니다 (위쪽 기간 버튼을 누르면 모든 차트가 다시 같은 기간)">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-cp="${k}" class="${k === p[0] ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${stats}
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
-      <p class="small muted" style="margin:6px 0 0">${m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
+      <p class="small muted" style="margin:6px 0 0">${m.quarterly ? `분기 자료 (${firstDate}부터 저장, 분기마다 자동 추가, 날짜 = 분기 마지막 달) · n일 이동평균 = 최근 n개 분기 평균` : m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     box.querySelectorAll('[data-ma]').forEach(cb => cb.onchange = () => {
       const next = [...box.querySelectorAll('[data-ma]:checked')].map(x => x.dataset.ma);
       saveMa(m, next);

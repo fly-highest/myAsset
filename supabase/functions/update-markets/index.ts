@@ -1,6 +1,6 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
 //   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · GLD · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
-//   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화) · 네이버(한국 국채 3년) · KB(선도아파트 50) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
+//   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화) · 네이버(한국 국채 3년) · KB(선도아파트 50 · 아파트 PIR) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
 //   과거 자료는 업로드한 CSV(Investing.com, source = 'CSV') — 그 날짜는 덮어쓰지 않습니다. 평일만, 날짜는 거래소 현지 날짜
@@ -167,6 +167,19 @@ Deno.serve(async (req) => {
     const dates: string[] = d?.['날짜리스트'] || [], vals: number[] = d?.['선도50지수리스트'] || [];
     if (!dates.length) throw new Error('KB 응답 없음');
     return String(await save('KB_LEAD50', dates.map((ym, i) => ({ date: `${ym.slice(0, 4)}-${ym.slice(4, 6)}-01`, close: Math.round(Number(vals[i]) * 10000) / 10000 })), 'KB'));
+  });
+  // KB 아파트담보대출 PIR (소득 대비 주택가격, 분기, 2008-03~) — 서울 · 경기, 날짜 = 분기 마지막 달 1일
+  await other('KB_PIR', async () => {
+    const r = await fetch('https://data-api.kbland.kr/bfmstat/weekMnthlyHuseTrnd/husScurlnPir', { headers: UA });
+    const d = (await r.json())?.dataBody?.data;
+    const dates: string[] = d?.['날짜리스트'] || [];
+    if (!dates.length) throw new Error('KB PIR 응답 없음');
+    const out: string[] = [];
+    for (const [name, pair] of [['서울', 'KB_PIR_SEOUL'], ['경기', 'KB_PIR_GG']]) {
+      const list = (d['데이터리스트'] || []).find((x: { 지역명: string }) => x.지역명 === name)?.dataList || [];
+      out.push(`${name} ${await save(pair, dates.map((ym, i) => ({ date: `${ym.slice(0, 4)}-${ym.slice(4, 6)}-01`, close: Math.round(Number(list[i]?.['KB아파트PIR']) * 10000) / 10000 })).filter((x) => x.close > 0), 'KB')}`);
+    }
+    return out.join(' · ');
   });
   // 미국 연준 통계(FRED, 무료 CSV): 하이일드 채권 스프레드(%) · M2 통화량(십억 달러, 월간)
   for (const [pair, id, monthly] of [['HY_OAS', 'BAMLH0A0HYM2', false], ['M2', 'M2SL', true]] as [string, string, boolean][]) {
