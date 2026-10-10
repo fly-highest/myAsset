@@ -361,7 +361,11 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .mkt-card { margin-bottom: 14px; }
 .fx-stats.four { grid-template-columns: repeat(4, 1fr); } @media (max-width: 900px) { .fx-stats.four { grid-template-columns: repeat(2, 1fr); } }
 /* 시장 지표: 이동평균 체크박스 */
-.ma-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 2px 0 8px; font-size: 13px; }
 .ma-pick { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
 .ma-pick input { margin: 0; }
 .ma-swatch { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+.ma-chart .ma-picks { position: absolute; top: 0; right: 0; z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 8px; max-width: 100%;
+  font-size: 11.5px; color: var(--muted); background: rgba(255,255,255,.88); padding: 2px 6px; border-radius: 6px; }
+.ma-chart .ma-title { font-weight: 600; margin-right: 2px; }
+.ma-chart .ma-pick input { width: 12px; height: 12px; }
+.ma-chart .ma-swatch { width: 10px; height: 3px; }

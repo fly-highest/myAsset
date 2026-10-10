@@ -86,10 +86,10 @@
     })));
   }
 
-  // 이동평균 체크박스 줄
+  // 이동평균 체크박스: 차트 오른쪽 위에 작게 고정
   function maPicker(m, sel) {
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
-    return `<div class="ma-picks"><span class="muted small">이동평균</span>
+    return `<div class="ma-picks"><span class="ma-title">이동평균</span>
       ${MA_OPTS.map(([k, l, , c]) => box(k, l, c)).join('')}
       ${m.band ? box('band', '200일 ±1%', '#e88d95') : ''}</div>`;
   }
@@ -148,8 +148,7 @@
     const unit = m.everyDay ? '날짜(주말 포함)' : '거래일';
     box.innerHTML = `<h3 class="sec-sub" style="margin-top:0">${m.title}</h3>
       ${stats}
-      ${maPicker(m, sel)}
-      <div class="chart-box" style="height:280px"><canvas id="ch-${m.id}"></canvas></div>
+      <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">일별 종가 (${m.since}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준) · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? ' · 브렌트유 이동평균은 짧은 점선' : ''}</p>`;
     box.querySelectorAll('[data-ma]').forEach(cb => cb.onchange = () => {
       const next = [...box.querySelectorAll('[data-ma]:checked')].map(x => x.dataset.ma);
@@ -178,7 +177,7 @@
       type: 'line',
       data: { labels, datasets },
       options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
+        responsive: true, maintainAspectRatio: false, animation: false, layout: { padding: { top: 26 } }, // 오른쪽 위 체크박스 자리
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2 } },
