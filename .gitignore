@@ -5,3 +5,6 @@
 node_modules/
 .DS_Store
 Thumbs.db
+
+# 내 실제 자산 자료(엑셀)는 공개 저장소에 올리지 않습니다 (폴더 맨 위의 .xlsx 전부)
+/*.xlsx
