@@ -11,7 +11,7 @@
 //   NAVER  : 국내 ETF 중 Google 시세가 없는 종목은 네이버 금융 ETF 시세로 대체
 //   UPBIT  : 업비트 공개 시세 API (원화 마켓)
 //   GOLD   : KRX 금현물(원/g) = 네이버 금융 KRX 금 시세 (실패 시 국제 금시세 ÷ 31.1034768 × USD/KRW)
-//   환율·금시세가 Google 에 없으면: 환율 open.er-api.com(일 1회), 금 api.gold-api.com(실시간)
+//   환율·금시세가 Google 에 없으면: 환율 open.er-api.com(일 1회), 금 Yahoo 금 선물 GC=F (실패 시 api.gold-api.com)
 //   CASH   : 항상 1 (저장하지 않음)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
   }
   // 환율·국제 금시세: Google 값이 없으면 무료 공개 API 로 대체
   //   환율 USD/KRW → open.er-api.com (하루 1회 갱신되는 기준 환율)
-  //   금 XAU/USD  → api.gold-api.com (실시간)
+  //   금 XAU/USD  → Yahoo 금 선물 GC=F (아래), 실패 시 api.gold-api.com
   let fx = g.get('CURRENCY:USDKRW') ?? null, fxSource = 'GOOGLE';
   let xau = g.get('CURRENCY:XAUUSD') ?? null, xauSource = 'GOOGLE';
   if (!fx) {
@@ -130,6 +130,15 @@ Deno.serve(async (req) => {
       const v = Number((await r.json())?.rates?.KRW);
       if (v > 0) { fx = Math.round(v * 100) / 100; fxSource = 'ER_API'; }
     } catch { /* 환율 없음 */ }
+  }
+  // 국제 금시세: Google 에 없으면 Yahoo 금 선물(GC=F, COMEX) 현재가 → 그것도 안 되면 api.gold-api.com
+  //   (일별 금시세 fx_daily 'XAU' 도 Yahoo GC=F 라서 현재값과 이력이 같은 출처)
+  if (!xau) {
+    try {
+      const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=1d&interval=1d', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const v = Number((await r.json())?.chart?.result?.[0]?.meta?.regularMarketPrice);
+      if (v > 0) { xau = Math.round(v * 100) / 100; xauSource = 'YAHOO'; }
+    } catch { /* 아래로 */ }
   }
   if (!xau) {
     try {
