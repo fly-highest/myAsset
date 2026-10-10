@@ -194,11 +194,12 @@
     }
 
     const unit = m.everyDay ? '날짜(주말 포함)' : '거래일';
+    const firstDate = data.map(d => d.hist[0] && d.hist[0].date).filter(Boolean).sort()[0] || m.since; // 실제로 저장된 가장 오래된 날짜
     box.innerHTML = `<div class="mkt-hd"><h3 class="sec-sub" style="margin:0">${m.title}</h3>
         <div class="seg seg-sm" role="group" aria-label="이 차트의 기간" title="이 차트만 기간을 바꿉니다 (위쪽 기간 버튼을 누르면 모든 차트가 다시 같은 기간)">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-cp="${k}" class="${k === p[0] ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${stats}
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
-      <p class="small muted" style="margin:6px 0 0">${m.monthly ? `월간 자료 (${m.since}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${m.since}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
+      <p class="small muted" style="margin:6px 0 0">${m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     box.querySelectorAll('[data-ma]').forEach(cb => cb.onchange = () => {
       const next = [...box.querySelectorAll('[data-ma]:checked')].map(x => x.dataset.ma);
       saveMa(m, next);

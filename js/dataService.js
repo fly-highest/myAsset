@@ -326,15 +326,23 @@ window.DataService = (function () {
     if (!SB || !SB.url) return [];
     const c = histCache[pair];
     if (c && Date.now() - c.t < 10 * 60 * 1000) return c.rows;
-    let rows = [];
-    for (let off = 0; ; off += 1000) { // 서버가 한 번에 1000행까지 주므로 나눠서 읽음
-      const page = await sbGet(`fx_daily?select=date,close,source&pair=eq.${encodeURIComponent(pair)}&order=date.asc&offset=${off}&limit=1000`);
-      rows = rows.concat(page);
-      if (page.length < 1000) break;
-    }
-    rows = rows.map(r => ({ date: r.date, close: Number(r.close), source: r.source }));
-    histCache[pair] = { t: Date.now(), rows };
-    return rows;
+    if (c && c.loading) return c.loading; // 같은 지표를 여러 곳에서 동시에 요청하면 한 번만 받음
+    const loading = (async () => {
+      // 서버가 한 번에 1000행까지 주므로: 첫 페이지에서 전체 개수를 받고 나머지 페이지는 동시에 받음 (수십 년치도 빠르게)
+      const q = `fx_daily?select=date,close,source&pair=eq.${encodeURIComponent(pair)}&order=date.asc`;
+      const r0 = await fetch(`${SB.url}/rest/v1/${q}&offset=0&limit=1000`, { headers: { apikey: SB.key, Prefer: 'count=exact' } });
+      if (!r0.ok) throw new Error('HTTP ' + r0.status);
+      const total = Number(((r0.headers.get('content-range') || '').split('/')[1]) || 0);
+      const pages = [await r0.json()];
+      const offs = [];
+      for (let off = 1000; off < total; off += 1000) offs.push(off);
+      (await Promise.all(offs.map(off => sbGet(`${q}&offset=${off}&limit=1000`)))).forEach(pg => pages.push(pg));
+      const rows = pages.flat().map(r => ({ date: r.date, close: Number(r.close), source: r.source }));
+      histCache[pair] = { t: Date.now(), rows };
+      return rows;
+    })();
+    histCache[pair] = { t: 0, loading };
+    try { return await loading; } catch (e) { delete histCache[pair]; throw e; }
   }
   async function getQqqSignal() {
     if (!SB || !SB.url) return null;
