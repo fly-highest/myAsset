@@ -65,7 +65,7 @@
     const trackCell = i => { const t = TrackCur.of(i); return t === i.currency ? `<span class="muted">${esc(t)}</span>` : `<b>${esc(t)}</b>`; };
     const styleCell = i => { const s = Styles.effective(i); return Styles.isDefault(i) ? `<span class="muted" title="자산유형으로 정한 기본값">${esc(Styles.name(s))}</span>` : esc(Styles.name(s)); };
     const row = (i, assigned) => `<tr>
-      <td class="nm">${esc(i.name)} <span class="muted small">${esc(i.eng_name || '')}</span></td>
+      <td class="nm"><div class="nm-clip" title="${esc(i.name)}${i.eng_name ? ' &#10;' + esc(i.eng_name) : ''}">${esc(i.name)} <span class="muted small">${esc(i.eng_name || '')}</span></div></td>
       <td class="sym">${esc(i.symbol)}<small>${esc(i.exchange)}</small></td>
       <td>${esc(i.asset_type)}</td><td>${esc(i.currency)}</td><td>${trackCell(i)}</td><td>${styleCell(i)}</td>
       <td class="num">${heldCount[i.id] ? `${heldCount[i.id]}개 계좌` : '<span class="muted">보유 없음</span>'}</td>

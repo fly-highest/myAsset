@@ -349,3 +349,6 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .gp-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .gp-list button { display: flex; align-items: center; gap: 6px; justify-content: flex-start; }
 .gp-list button.on { outline: 2px solid #2457d6; }
+/* 자산 구성 관리 표: 종목명 칸 너비 제한 (넘치면 … 표시, 마우스를 올리면 전체 이름) */
+.comp-tbl .nm-clip { width: 560px; max-width: 560px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comp-tbl th:first-child { width: 580px; }
