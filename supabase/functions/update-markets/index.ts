@@ -1,5 +1,5 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
-//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · GLD · VIX · COPPER · XAU(국제 금시세) · BTC(매일)
+//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · GLD · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
 //   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화) · 네이버(한국 국채 3년) · KB(선도아파트 50) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
@@ -26,6 +26,8 @@ const SERIES: { pair: string; google: string | null; yahoo: string; everyDay?: b
   { pair: 'COPPER', google: null, yahoo: 'HG=F' }, // 구리 선물 (달러/파운드) — 구리/금 비율용
   // 국제 금시세(달러/온스, 금환산 이력용): GOOGLEFINANCE 의 CURRENCY:XAUUSD 는 값을 주지 않음 → Yahoo 금 선물
   { pair: 'XAU', google: null, yahoo: 'GC=F' },
+  // 국제 은시세(달러/온스) — 금/은 비율용. 금과 같이 GOOGLEFINANCE 통화 시세는 값을 주지 않음 → Yahoo 은 선물
+  { pair: 'SILVER', google: null, yahoo: 'SI=F' },
   // 비트코인: 주말에도 거래 → 매일 저장, 날짜는 UTC 기준 (Investing.com 비트파이넥스와 같음)
   { pair: 'BTC', google: 'CURRENCY:BTCUSD', yahoo: 'BTC-USD', everyDay: true }
 ];

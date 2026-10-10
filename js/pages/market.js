@@ -41,6 +41,8 @@
       series: [{ pair: 'KIMCHI', label: '김치 프리미엄', color: PRICE, derive: kimchiHistory }] },
     { id: 'cugold', title: '구리 / 금 가격 비율 (×1000) · 오르면 경기 기대, 내리면 안전자산 선호', fmt: v => Number(v).toFixed(3), tick: v => Number(v).toFixed(2), since: '2016-10-11', ma: ['n200'],
       series: [{ pair: 'CUGOLD', label: '구리/금', color: PRICE, derive: copperGoldHistory }] },
+    { id: 'ausilver', title: '금 / 은 가격 비율 · 금 1온스로 살 수 있는 은의 온스 · 높으면 은이 상대적으로 쌈', fmt: dec2, tick: v => Number(v).toFixed(0), since: '2000-08-30', ma: ['n200'],
+      series: [{ pair: 'AUAG', label: '금/은', color: PRICE, derive: goldSilverHistory }] },
     { id: 'kr3y', title: '한국 국채 3년 (%)', fmt: pctFmt, tick: v => v + '%', since: '2023-10-11', ma: [], diffAbs: true,
       series: [{ pair: 'KR3Y', label: '국채 3년', color: PRICE }] },
     { id: 'kb50', title: 'KB 선도아파트 50 지수 (월간, 2008-12~)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2008-12', ma: ['y1'], monthly: true,
@@ -64,6 +66,13 @@
     const [cu, au] = await Promise.all(['COPPER', 'XAU'].map(p => DataService.getFxHistory(p)));
     const g = lookup(au);
     return cu.map(r => { const x = g(r.date); return x ? { date: r.date, close: Math.round((r.close / x) * 1e6) / 1000, source: 'CALC' } : null; }).filter(Boolean);
+  }
+
+  // 금/은 비율 = 금(달러/온스) ÷ 은(달러/온스)
+  async function goldSilverHistory() {
+    const [au, ag] = await Promise.all(['XAU', 'SILVER'].map(p => DataService.getFxHistory(p)));
+    const s = lookup(ag);
+    return au.map(r => { const x = s(r.date); return x ? { date: r.date, close: Math.round((r.close / x) * 100) / 100, source: 'CALC' } : null; }).filter(Boolean);
   }
 
   // 이동평균 종류: [키, 이름, 길이, 색] — n = 자료 개수(거래일, 비트코인은 날짜), y = 달력 기간(개월)
@@ -108,7 +117,7 @@
     if (!el) return;
     const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~10년 + 최대
     el.innerHTML = `
-      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · KB 선도50</span></h2>
+      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · 금/은 · KB 선도50</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
