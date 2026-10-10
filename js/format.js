@@ -9,8 +9,10 @@ window.Fmt = (function () {
 
   function krw(v) { const x = r0(v); return (x < 0 ? MINUS : '') + '₩' + n0.format(Math.abs(x)); }
   function usd(v) { const x = r2(v); return (x < 0 ? MINUS : '') + '$' + n2.format(Math.abs(x)); }
-  function money(v, cur) { return cur === 'USD' ? usd(v) : krw(v); }
-  function rounded(v, cur) { return cur === 'USD' ? r2(v) : r0(v); }
+  // 금 환산(XAU): 금 무게 g, 소수 둘째 자리
+  function gold(v) { const x = r2(v); return (x < 0 ? MINUS : '') + n2.format(Math.abs(x)) + 'g'; }
+  function money(v, cur) { return cur === 'USD' ? usd(v) : cur === 'XAU' ? gold(v) : krw(v); }
+  function rounded(v, cur) { return cur === 'USD' || cur === 'XAU' ? r2(v) : r0(v); }
   // 손익: 이익은 + 부호
   function signedMoney(v, cur) { return (rounded(v, cur) > 0 ? '+' : '') + money(v, cur); }
   function pct(v) { const x = r2(v); return (x > 0 ? '+' : x < 0 ? MINUS : '') + n2.format(Math.abs(x)) + '%'; }
@@ -45,7 +47,7 @@ window.Fmt = (function () {
     return d.toISOString().slice(0, 10);
   }
 
-  return { MINUS, krw, usd, money, signedMoney, pct, weight, fx, plain, qty, price, cls, todayKST, hourKST, mdhm, md, addDays };
+  return { MINUS, krw, usd, gold, money, signedMoney, pct, weight, fx, plain, qty, price, cls, todayKST, hourKST, mdhm, md, addDays };
 })();
 
 window.esc = function (s) {

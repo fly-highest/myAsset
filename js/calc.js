@@ -32,7 +32,15 @@ window.Calc = (function () {
   }
 
   // 통화 모드별 표시값 (14-4). 합계 수익률 = 합계 손익 ÷ 합계 투자금액
-  function view(a, mode, fx) {
+  // 금 환산(GOLD): 원화 환산 금액 ÷ 금 1g 가격(원) = 금 몇 g 인지. gold 를 안 주면 지금 금 시세(setGold)로
+  let goldNow = null;
+  function setGold(krwPerGram) { goldNow = krwPerGram > 0 ? krwPerGram : null; }
+  function view(a, mode, fx, gold) {
+    if (mode === 'GOLD') {
+      const g = gold || goldNow;
+      if (g) return { parts: [{ cur: 'XAU', inv: a.invK / g, val: a.valK / g, prof: a.profK / g, ret: pct(a.profK, a.invK) }] };
+      mode = 'KRW'; // 금 시세가 없으면 원화로
+    }
     if (mode === 'USD') {
       const f = fx || 1;
       return { parts: [{ cur: 'USD', inv: a.invK / f, val: a.valK / f, prof: a.profK / f, ret: pct(a.profK, a.invK) }] };
@@ -131,5 +139,5 @@ window.Calc = (function () {
     return { list: def.list, groups };
   }
 
-  return { pct, row, emptyAgg, add, view, buildModel, buildSnapshotModel, scaleRow, dimension };
+  return { pct, row, emptyAgg, add, view, setGold, get goldNow() { return goldNow; }, buildModel, buildSnapshotModel, scaleRow, dimension };
 })();

@@ -10,10 +10,10 @@
     // 지금 해당하는 기준: 기본 기준(200일선 +1% 이상 / −1% 이하)과 QQQ 200일선 구간을 연결
     const activeId = sig ? { above: 'tgt-above', below: 'tgt-below' }[sig.zone] : null;
     // 목표 비교는 하나의 통화로 합산해야 하므로 혼합 모드는 원화 기준으로 보여 줍니다
-    const mode = App.mode === 'USD' ? 'USD' : 'KRW';
-    const cur = mode;
+    const mode = App.mode === 'USD' || (App.mode === 'GOLD' && model.gold) ? App.mode : 'KRW'; // 금환산도 지원
+    const cur = mode === 'GOLD' ? 'XAU' : mode;
     const fx = model.fx;
-    const conv = k => (cur === 'USD' ? (fx ? k / fx : 0) : k);
+    const conv = k => (cur === 'USD' ? (fx ? k / fx : 0) : cur === 'XAU' ? k / model.gold : k);
     const totalK = model.total.valK;
     const curPct = code => (totalK ? (model.groups[code].agg.valK / totalK) * 100 : 0);
     const muted = '<span class="muted">—</span>';

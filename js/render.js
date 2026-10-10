@@ -245,8 +245,8 @@ window.UI = (function () {
     const rows = entries.map(e => {
       const m = e.model;
       if (!mixed) {
-        const v = Calc.view(m.total, mode, m.fx);
-        const amounts = list.map((g, i) => gcell(i, amt(Calc.view(m.groups[g.code].agg, mode, m.fx), 'val'))).join('');
+        const v = Calc.view(m.total, mode, m.fx, m.gold);
+        const amounts = list.map((g, i) => gcell(i, amt(Calc.view(m.groups[g.code].agg, mode, m.fx, m.gold), 'val'))).join('');
         const weights = list.map((g, i) => gcell(i, Fmt.weight(w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
         return `<tr>${labelCell(e)}
           <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v, { split: false })}</td><td class="num">${ret(v)}</td>

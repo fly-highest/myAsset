@@ -276,6 +276,27 @@ window.DataService = (function () {
     const meta = await getPriceMeta();
     return Object.fromEntries(Object.entries(meta).map(([id, m]) => [id, m.price]));
   }
+  // 금 환산용 금 1g 가격(원) = 국제 금시세(XAU/USD, 달러/트로이온스) × 환율 ÷ 31.1034768
+  // 현재: fx_rates 의 XAU/USD (매시 갱신). 없으면 일별 금시세(fx_daily 'XAU')의 마지막 값
+  const TROY_OZ_G = 31.1034768;
+  async function getGoldRate() {
+    const [L, fx] = await Promise.all([loadLive(), getFxRate()]);
+    let x = L && L.fx['XAU/USD'];
+    if (!x) {
+      const h = await getFxHistory('XAU').catch(() => []);
+      const last = h[h.length - 1];
+      if (last) x = { rate: last.close, as_of: last.date + 'T21:00:00Z', source: 'YAHOO' };
+    }
+    if (!x || !fx.rate) return null;
+    return { krwPerGram: (x.rate * fx.rate) / TROY_OZ_G, usdPerOz: x.rate, fxRate: fx.rate, as_of: x.as_of, source: x.source };
+  }
+  // 지난 날짜의 금 1g 가격(원): 그날(없으면 그 전 마지막 거래일) 금시세 × 그때 환율
+  async function goldKrwPerGramOn(date, fxRate) {
+    const h = await getFxHistory('XAU').catch(() => []);
+    let lo = 0, hi = h.length - 1, hit = null;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (h[mid].date <= date) { hit = h[mid]; lo = mid + 1; } else hi = mid - 1; }
+    return hit && fxRate ? (hit.close * fxRate) / TROY_OZ_G : null;
+  }
   async function getFxRate() {
     const L = await loadLive();
     const f = L && L.fx['USD/KRW'];
@@ -1386,7 +1407,7 @@ window.DataService = (function () {
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     updateInstrumentAttrs,
     getHoldings, addHolding, updateHolding, deleteHolding,
-    getPrices, getFxRate, getFxHistory, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
+    getPrices, getFxRate, getFxHistory, getGoldRate, goldKrwPerGramOn, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
     getSnapshots, getSnapshotItems, createDailySnapshot, startRealHistory, autoDailySnapshot, ensureHistory,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,

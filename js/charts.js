@@ -21,6 +21,13 @@ window.Charts = (function () {
         { label: '투자금액', cur: 'USD', data: models.map(m => (m.fx ? m.total.invK / m.fx : 0)), dashed: true }
       ] };
     }
+    if (mode === 'GOLD') { // 금환산: 날짜마다 그날 금 1g 가격으로 나눈 금 무게(g)
+      const golds = await Promise.all(snaps.map((s, i) => DataService.goldKrwPerGramOn(s.snapshot_date, models[i].fx)));
+      return { labels, series: [
+        { label: '평가금액 (금 g)', cur: 'XAU', data: models.map((m, i) => (golds[i] ? m.total.valK / golds[i] : null)) },
+        { label: '투자금액 (금 g)', cur: 'XAU', data: models.map((m, i) => (golds[i] ? m.total.invK / golds[i] : null)), dashed: true }
+      ] };
+    }
     return { labels, series: [
       { label: '한국자산 평가 (₩)', cur: 'KRW', data: models.map(m => m.total.kr.val) },
       { label: '한국자산 투자 (₩)', cur: 'KRW', data: models.map(m => m.total.kr.inv), dashed: true },
@@ -31,6 +38,7 @@ window.Charts = (function () {
 
   const tick = cur => v => {
     if (cur === 'USD') return '$' + Fmt.plain(v);
+    if (cur === 'XAU') return Fmt.plain(v) + 'g';
     return Math.abs(v) >= 1e8 ? '₩' + Fmt.plain(v / 1e8, 2) + '억' : Math.abs(v) >= 1e4 ? '₩' + Fmt.plain(v / 1e4) + '만' : '₩' + Fmt.plain(v);
   };
   const palette = ['#2453d6', '#8fa6e8', '#17a589', '#8fd1c4'];
@@ -115,11 +123,12 @@ window.Charts = (function () {
   // part (혼합 모드): 'kr' = 원화 자산(₩)만, 'us' = 달러 자산($)만 따로 그립니다. 툴팁 비중은 그 차트 안에서의 비중.
   function groupShare(canvasId, snaps, models, mode, part) {
     const labels = snaps.map(s => s.snapshot_date);
-    const cur = part === 'us' || (!part && mode === 'USD') ? 'USD' : 'KRW';
+    const cur = part === 'us' || (!part && mode === 'USD') ? 'USD' : !part && mode === 'GOLD' ? 'XAU' : 'KRW';
     const valueOf = (m, code) => {
       const a = m.groups[code].agg;
       if (part === 'kr') return a.kr.val;
       if (part === 'us') return a.us.val;
+      if (cur === 'XAU') return m.gold ? a.valK / m.gold : 0; // 금환산: 그날 금 1g 가격으로 나눈 g
       return cur === 'USD' ? (m.fx ? a.valK / m.fx : 0) : a.valK;
     };
     const shareOf = (i, code) => {

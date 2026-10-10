@@ -1,5 +1,5 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
-//   DXY 달러 인덱스 · WTI · BRENT 유가 · QQQ · SPY · GLD · BTC(비트코인, 매일)
+//   DXY 달러 인덱스 · WTI · BRENT 유가 · QQQ · SPY · GLD · XAU(국제 금시세) · BTC(비트코인, 매일)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
 //   과거 자료는 업로드한 CSV(Investing.com, source = 'CSV') — 그 날짜는 덮어쓰지 않습니다. 평일만, 날짜는 거래소 현지 날짜
@@ -21,6 +21,8 @@ const SERIES: { pair: string; google: string | null; yahoo: string; everyDay?: b
   { pair: 'QQQ', google: 'NASDAQ:QQQ', yahoo: 'QQQ' },
   { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' },
   { pair: 'GLD', google: 'NYSEARCA:GLD', yahoo: 'GLD' },
+  // 국제 금시세(달러/온스, 금환산 이력용): GOOGLEFINANCE 의 CURRENCY:XAUUSD 는 값을 주지 않음 → Yahoo 금 선물
+  { pair: 'XAU', google: null, yahoo: 'GC=F' },
   // 비트코인: 주말에도 거래 → 매일 저장, 날짜는 UTC 기준 (Investing.com 비트파이넥스와 같음)
   { pair: 'BTC', google: 'CURRENCY:BTCUSD', yahoo: 'BTC-USD', everyDay: true }
 ];

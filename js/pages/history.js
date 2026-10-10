@@ -7,7 +7,11 @@
   const modelCache = new Map();
 
   async function snapModel(s) {
-    if (!modelCache.has(s.id)) modelCache.set(s.id, Calc.buildSnapshotModel(await DataService.getSnapshotItems(s.id)));
+    if (!modelCache.has(s.id)) {
+      const m = Calc.buildSnapshotModel(await DataService.getSnapshotItems(s.id));
+      m.gold = await DataService.goldKrwPerGramOn(s.snapshot_date, m.fx); // 금환산: 그날 금 1g 가격
+      modelCache.set(s.id, m);
+    }
     return modelCache.get(s.id);
   }
 
@@ -41,7 +45,7 @@
       </div>
       <div class="sec grid-2e">
         <div class="card pad"><div class="sec-hd"><h2>총 평가금액 · 투자금액 추이</h2></div><div class="chart-box"><canvas id="ch-trend"></canvas></div></div>
-        <div class="card pad"><div class="sec-hd"><h2>자산군 비중 추이</h2><span class="small muted">${mode === 'USD' ? '당시 분류 · 달러 환산(당시 환율)' : mode === 'KRW' ? '당시 분류 · 원화 환산' : '당시 분류 · 위: 원화 자산(₩) / 아래: 달러 자산($)'}</span></div>${mode === 'MIXED'
+        <div class="card pad"><div class="sec-hd"><h2>자산군 비중 추이</h2><span class="small muted">${mode === 'USD' ? '당시 분류 · 달러 환산(당시 환율)' : mode === 'GOLD' ? '당시 분류 · 금 환산(그날 금 시세, g)' : mode === 'KRW' ? '당시 분류 · 원화 환산' : '당시 분류 · 위: 원화 자산(₩) / 아래: 달러 자산($)'}</span></div>${mode === 'MIXED'
           ? '<div class="chart-box half"><canvas id="ch-share-kr"></canvas></div><div class="chart-box half"><canvas id="ch-share-us"></canvas></div>'
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
@@ -138,9 +142,9 @@
       ordered.forEach(({ s, m }) => {
         if (!mixed) {
           const c = mode === 'USD' ? 'USD' : 'KRW';
-          const v = Calc.view(m.total, mode, m.fx).parts[0];
+          const v = Calc.view(m.total, mode, m.fx, m.gold).parts[0];
           rows.push([s.snapshot_date, s.snapshot_time, c === 'USD' ? 'USD($)' : 'KRW(₩)', money(v.val, c), money(v.inv, c), money(v.prof, c), r2(v.ret), m.fx,
-            ...Groups.list.map(g => money(Calc.view(m.groups[g.code].agg, mode, m.fx).parts[0].val, c)),
+            ...Groups.list.map(g => money(Calc.view(m.groups[g.code].agg, mode, m.fx, m.gold).parts[0].val, c)),
             ...Groups.list.map(g => r2(pct(m.groups[g.code].agg.valK, m.total.valK)))]);
           return;
         }
