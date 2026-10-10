@@ -298,19 +298,21 @@ window.DataService = (function () {
   }
   // QQQ 200일선 신호: 최신 현재가(prices) vs 200일 이동평균(indicators)
   //   zone: 'above' = 200일선 +1% 이상 / 'below' = −1% 이하 / 'between' = 그 사이
-  // 일별 USD/KRW 환율 (DB fx_daily, 저장된 전체 기간) — 투자 화면의 이동평균·차트용 (5년 이동평균을 5년치 그리려면 10년치 필요). 10분 동안 다시 읽지 않음
-  let fxHistCache = null;
-  async function getFxHistory() {
+  // 일별 시장 지표 (DB fx_daily, 저장된 전체 기간): 'USD/KRW' 환율 · 'DXY' 달러 인덱스 · 'WTI' · 'BRENT' 유가
+  // 투자 화면의 기간 평균·이동평균·차트용 (5년 이동평균을 5년치 그리려면 10년치 필요). 지표별로 10분 동안 다시 읽지 않음
+  const histCache = {};
+  async function getFxHistory(pair = 'USD/KRW') {
     if (!SB || !SB.url) return [];
-    if (fxHistCache && Date.now() - fxHistCache.t < 10 * 60 * 1000) return fxHistCache.rows;
+    const c = histCache[pair];
+    if (c && Date.now() - c.t < 10 * 60 * 1000) return c.rows;
     let rows = [];
     for (let off = 0; ; off += 1000) { // 서버가 한 번에 1000행까지 주므로 나눠서 읽음
-      const page = await sbGet(`fx_daily?select=date,close&pair=eq.${encodeURIComponent('USD/KRW')}&order=date.asc&offset=${off}&limit=1000`);
+      const page = await sbGet(`fx_daily?select=date,close,source&pair=eq.${encodeURIComponent(pair)}&order=date.asc&offset=${off}&limit=1000`);
       rows = rows.concat(page);
       if (page.length < 1000) break;
     }
-    rows = rows.map(r => ({ date: r.date, close: Number(r.close) }));
-    fxHistCache = { t: Date.now(), rows };
+    rows = rows.map(r => ({ date: r.date, close: Number(r.close), source: r.source }));
+    histCache[pair] = { t: Date.now(), rows };
     return rows;
   }
   async function getQqqSignal() {

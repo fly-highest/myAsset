@@ -10,3 +10,5 @@ Thumbs.db
 /*.xlsx
 # 폴더 맨 위에 둔 자료 파일(CSV)도 올리지 않음
 /*.csv
+# 업로드용 자료 폴더 (시장 지표 CSV 등)
+/uploadneed/
