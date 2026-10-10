@@ -248,10 +248,10 @@ window.App = (function () {
     ]);
     const prices = Object.fromEntries(Object.entries(priceMeta).map(([id, m]) => [id, m.price]));
     const model = Calc.buildModel({ accounts, holdings, instruments, prices, priceMeta, fx: fxInfo.rate });
-    // 금환산 모드용: 지금 금 1g 가격(원)
+    // 금환산 모드용: 지금 국제 금시세
     const goldInfo = await DataService.getGoldRate().catch(() => null);
-    Calc.setGold(goldInfo && goldInfo.krwPerGram);
-    model.gold = goldInfo ? goldInfo.krwPerGram : null;
+    Calc.setGold(goldInfo && goldInfo.usdPerOz); // 금환산: 지금 국제 금시세(달러/온스)
+    model.gold = goldInfo ? goldInfo.usdPerOz : null;
     return { model, accounts, holdings, instruments, prices, fxInfo, goldInfo, status };
   }
 

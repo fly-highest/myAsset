@@ -290,12 +290,12 @@ window.DataService = (function () {
     if (!x || !fx.rate) return null;
     return { krwPerGram: (x.rate * fx.rate) / TROY_OZ_G, usdPerOz: x.rate, fxRate: fx.rate, as_of: x.as_of, source: x.source };
   }
-  // 지난 날짜의 금 1g 가격(원): 그날(없으면 그 전 마지막 거래일) 금시세 × 그때 환율
-  async function goldKrwPerGramOn(date, fxRate) {
+  // 그 날짜(없으면 그 전 마지막 거래일)의 국제 금시세 (달러/트로이온스) — 금환산 이력용
+  async function xauOn(date) {
     const h = await getFxHistory('XAU').catch(() => []);
     let lo = 0, hi = h.length - 1, hit = null;
     while (lo <= hi) { const mid = (lo + hi) >> 1; if (h[mid].date <= date) { hit = h[mid]; lo = mid + 1; } else hi = mid - 1; }
-    return hit && fxRate ? (hit.close * fxRate) / TROY_OZ_G : null;
+    return hit ? hit.close : null;
   }
   async function getFxRate() {
     const L = await loadLive();
@@ -811,6 +811,40 @@ window.DataService = (function () {
   // ---------------------------------------------------------------
   // 스냅샷 (과거 이력)
   // ---------------------------------------------------------------
+  // 스냅샷에 금환산 결과 저장: 그 시점 국제 금시세(xau_usd, 달러/온스)와 종목·합계·자산군별 금 g
+  //   달러 자산 = 달러 ÷ 금시세, 원화 자산(현물금 포함) = 그 시점 환율로 달러로 바꾼 뒤 ÷ 금시세
+  function addGoldToSnapshot(snap, xau) {
+    if (!(xau > 0)) return snap;
+    const s = snap.snapshot;
+    let tv = 0, ti = 0;
+    const gv = {}, gi = {};
+    snap.items.forEach(it => {
+      const r = Calc.row(it, it.currency, it.current_price, it.exchange_rate);
+      it.value_gold_g = Calc.toGram(r.uv, xau);
+      it.invested_gold_g = Calc.toGram(r.ui, xau);
+      tv += it.value_gold_g; ti += it.invested_gold_g;
+      const g = it.asset_group || 'OTHER_STOCK';
+      gv[g] = (gv[g] || 0) + it.value_gold_g; gi[g] = (gi[g] || 0) + it.invested_gold_g;
+    });
+    const r2 = v => Math.round(v * 100) / 100;
+    Object.keys(gv).forEach(k => { gv[k] = r2(gv[k]); gi[k] = r2(gi[k]); });
+    Object.assign(s, {
+      xau_usd: xau, total_value_gold_g: r2(tv), total_invested_gold_g: r2(ti), total_profit_gold_g: r2(tv - ti),
+      total_return_gold_pct: Calc.pct(tv - ti, ti), group_values_gold_g: gv, group_invested_gold_g: gi
+    });
+    return snap;
+  }
+  // 저장된 실제 스냅샷 중 금환산 결과가 없는 것을 채움 (그날 금시세 = 일별 금시세 fx_daily 'XAU')
+  async function fillSnapshotGold() {
+    let changed = 0;
+    for (const sn of state.extraSnapshots || []) {
+      if (sn.snapshot.xau_usd) continue;
+      const xau = await xauOn(sn.snapshot.snapshot_date);
+      if (xau) { addGoldToSnapshot(sn, xau); changed++; }
+    }
+    if (changed) { snapCache = null; commit({ auto: true }); }
+    return changed;
+  }
   function makeSnapshot(date, entries, fxRate, createdAt) {
     const id = 'snap-' + date;
     const created = createdAt || date + 'T08:00:00+09:00';
@@ -912,6 +946,9 @@ window.DataService = (function () {
       return { account: accMap[h.account_id], instrument: inst, holding: h, price };
     });
     const snap = clone(makeSnapshot(date, entries, fx, nowISO()));
+    // 금환산 결과도 함께 저장 (스냅샷 시점의 국제 금시세)
+    const gr = await getGoldRate().catch(() => null);
+    addGoldToSnapshot(snap, gr && gr.usdPerOz);
     snap.snapshot.simulated = !real;
     if (initial) { // 이력의 시작점 (최초 데이터) — 시각 대신 '최초'로 표시
       snap.snapshot.initial = true;
@@ -934,8 +971,9 @@ window.DataService = (function () {
   // (지나간 날짜는 그때의 보유를 알 수 없어 만들지 않음)
   // 로그인 후 화면을 열 때: 실제 데이터인데 아직 예시 이력을 쓰고 있으면 이력 초기화(최초 데이터 저장), 아니면 08:00 스냅샷 확인
   async function ensureHistory() {
-    if (!state.meta.realHistory && !isPristine()) return { started: await startRealHistory() };
-    return { daily: await autoDailySnapshot() };
+    const r = !state.meta.realHistory && !isPristine() ? { started: await startRealHistory() } : { daily: await autoDailySnapshot() };
+    if (state.meta.realHistory) await fillSnapshotGold(); // 예전 스냅샷에 금환산 결과 채우기
+    return r;
   }
   async function autoDailySnapshot() {
     if (!state.meta.realHistory) return null;
@@ -1407,7 +1445,7 @@ window.DataService = (function () {
     getCatalogInfo, syncCatalog, autoSyncCatalogIfDue, searchCatalog, ensureInstrument, trackInstruments, trackDaily,
     updateInstrumentAttrs,
     getHoldings, addHolding, updateHolding, deleteHolding,
-    getPrices, getFxRate, getFxHistory, getGoldRate, goldKrwPerGramOn, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
+    getPrices, getFxRate, getFxHistory, getGoldRate, xauOn, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
     getSnapshots, getSnapshotItems, createDailySnapshot, startRealHistory, autoDailySnapshot, ensureHistory,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,

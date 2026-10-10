@@ -21,11 +21,12 @@ window.Charts = (function () {
         { label: '투자금액', cur: 'USD', data: models.map(m => (m.fx ? m.total.invK / m.fx : 0)), dashed: true }
       ] };
     }
-    if (mode === 'GOLD') { // 금환산: 날짜마다 그날 금 1g 가격으로 나눈 금 무게(g)
-      const golds = await Promise.all(snaps.map((s, i) => DataService.goldKrwPerGramOn(s.snapshot_date, models[i].fx)));
+    if (mode === 'GOLD') { // 금환산: 날짜마다 그날 국제 금시세로 계산한 금 무게(g) — 스냅샷에 저장된 금시세 우선
+      const xaus = await Promise.all(snaps.map(s => s.xau_usd || DataService.xauOn(s.snapshot_date)));
+      const g = (m, i) => (xaus[i] ? Calc.view(m.total, 'GOLD', m.fx, xaus[i]).parts[0] : null);
       return { labels, series: [
-        { label: '평가금액 (금 g)', cur: 'XAU', data: models.map((m, i) => (golds[i] ? m.total.valK / golds[i] : null)) },
-        { label: '투자금액 (금 g)', cur: 'XAU', data: models.map((m, i) => (golds[i] ? m.total.invK / golds[i] : null)), dashed: true }
+        { label: '평가금액 (금 g)', cur: 'XAU', data: models.map((m, i) => { const p = g(m, i); return p ? p.val : null; }) },
+        { label: '투자금액 (금 g)', cur: 'XAU', data: models.map((m, i) => { const p = g(m, i); return p ? p.inv : null; }), dashed: true }
       ] };
     }
     return { labels, series: [
@@ -128,7 +129,7 @@ window.Charts = (function () {
       const a = m.groups[code].agg;
       if (part === 'kr') return a.kr.val;
       if (part === 'us') return a.us.val;
-      if (cur === 'XAU') return m.gold ? a.valK / m.gold : 0; // 금환산: 그날 금 1g 가격으로 나눈 g
+      if (cur === 'XAU') return m.gold ? Calc.toGram(a.uv, m.gold) : 0; // 금환산: 그날 국제 금시세로 계산한 g
       return cur === 'USD' ? (m.fx ? a.valK / m.fx : 0) : a.valK;
     };
     const shareOf = (i, code) => {

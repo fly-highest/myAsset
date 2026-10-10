@@ -5,14 +5,17 @@
   let lastView = null; // 엑셀 다운로드용 최근 화면 데이터
   const RANGES = [['1W', '1주'], ['1M', '1개월'], ['3M', '3개월'], ['6M', '6개월'], ['1Y', '1년'], ['ALL', '전체']];
   const modelCache = new Map();
-
+  // 스냅샷 모델 캐시: 같은 id 라도 다시 만든 스냅샷(생성 시각·금시세가 다름)은 새로 계산, 항목이 비어 있으면 저장하지 않음
   async function snapModel(s) {
-    if (!modelCache.has(s.id)) {
-      const m = Calc.buildSnapshotModel(await DataService.getSnapshotItems(s.id));
-      m.gold = await DataService.goldKrwPerGramOn(s.snapshot_date, m.fx); // 금환산: 그날 금 1g 가격
-      modelCache.set(s.id, m);
+    const key = `${s.id}|${s.created_at || ''}|${s.xau_usd || ''}`;
+    if (!modelCache.has(key)) {
+      const items = await DataService.getSnapshotItems(s.id);
+      const m = Calc.buildSnapshotModel(items);
+      m.gold = s.xau_usd || await DataService.xauOn(s.snapshot_date); // 금환산: 스냅샷에 저장된 그날 국제 금시세(없으면 일별 금시세)
+      if (!items.length) return m;
+      modelCache.set(key, m);
     }
-    return modelCache.get(s.id);
+    return modelCache.get(key);
   }
 
   async function render() {

@@ -13,7 +13,7 @@
     const mode = App.mode === 'USD' || (App.mode === 'GOLD' && model.gold) ? App.mode : 'KRW'; // 금환산도 지원
     const cur = mode === 'GOLD' ? 'XAU' : mode;
     const fx = model.fx;
-    const conv = k => (cur === 'USD' ? (fx ? k / fx : 0) : cur === 'XAU' ? k / model.gold : k);
+    const conv = k => (cur === 'USD' ? (fx ? k / fx : 0) : cur === 'XAU' ? Calc.toGram(fx ? k / fx : 0, model.gold) : k); // 금: 원화 → 달러(지금 환율) → 금 g
     const totalK = model.total.valK;
     const curPct = code => (totalK ? (model.groups[code].agg.valK / totalK) * 100 : 0);
     const muted = '<span class="muted">—</span>';

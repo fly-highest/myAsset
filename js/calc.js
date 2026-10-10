@@ -10,10 +10,13 @@ window.Calc = (function () {
     const fxE = isUSD ? +fxEval : 1;
     const invO = q * ap, valO = q * cp, profO = valO - invO;
     const invK = invO * fxBuy, valK = valO * fxE, profK = valK - invK;
+    // 금환산용 달러 금액: 달러 자산 = 달러 그대로, 원화 자산(현물금 포함) = 그 시점 환율로 달러로 바꾼 금액
+    const fxNow = +fxEval || 0;
+    const uv = isUSD ? valO : fxNow ? valK / fxNow : 0, ui = isUSD ? invO : fxNow ? invK / fxNow : 0;
     return {
       currency, q, ap, cp, fxBuy, fxE,
       invO, valO, profO, retO: pct(profO, invO),
-      invK, valK, profK, retK: pct(profK, invK),
+      invK, valK, profK, retK: pct(profK, invK), uv, ui,
       // 손익 분해 (사용자 결정 2026-10-09: 환차손익은 매입금액 기준)
       priceP: (cp - ap) * q * fxE, // 가격손익 = 달러 손익 × 평가 환율
       fxP: q * ap * (fxE - fxBuy) // 환차손익 = 매입금액(달러) × 환율 변동
@@ -21,24 +24,31 @@ window.Calc = (function () {
   }
 
   function emptyAgg() {
-    return { invK: 0, valK: 0, profK: 0, priceP: 0, fxP: 0, q: 0, invO: 0, valO: 0, kr: { inv: 0, val: 0 }, us: { inv: 0, val: 0 }, nKR: 0, nUS: 0, n: 0 };
+    return { invK: 0, valK: 0, profK: 0, priceP: 0, fxP: 0, q: 0, invO: 0, valO: 0, uv: 0, ui: 0, kr: { inv: 0, val: 0 }, us: { inv: 0, val: 0 }, nKR: 0, nUS: 0, n: 0 };
   }
   function add(a, r) {
     a.invK += r.invK; a.valK += r.valK; a.profK += r.profK; a.priceP += r.priceP; a.fxP += r.fxP;
-    a.q += r.q; a.invO += r.invO; a.valO += r.valO; a.n++;
+    a.q += r.q; a.invO += r.invO; a.valO += r.valO; a.uv += r.uv || 0; a.ui += r.ui || 0; a.n++;
     if (r.currency === 'USD') { a.us.inv += r.invO; a.us.val += r.valO; a.nUS++; }
     else { a.kr.inv += r.invK; a.kr.val += r.valK; a.nKR++; }
     return a;
   }
 
   // 통화 모드별 표시값 (14-4). 합계 수익률 = 합계 손익 ÷ 합계 투자금액
-  // 금 환산(GOLD): 원화 환산 금액 ÷ 금 1g 가격(원) = 금 몇 g 인지. gold 를 안 주면 지금 금 시세(setGold)로
+  // 금 환산(GOLD): 그 시점의 달러 금액 ÷ 국제 금시세(달러/온스) × 31.1035 = 금 몇 g
+  //   달러 자산 = 달러 금액 그대로, 원화 자산(현물금 포함) = 그 시점 원/달러 환율로 달러로 바꾼 금액 (row 의 uv·ui)
+  //   투자금액도 같은 규칙 → 수익률은 '금 기준' 수익률. gold = 그 시점 금시세(달러/온스), 안 주면 지금 금시세(setGold)
+  const TROY_OZ_G = 31.1034768;
   let goldNow = null;
-  function setGold(krwPerGram) { goldNow = krwPerGram > 0 ? krwPerGram : null; }
+  function setGold(usdPerOz) { goldNow = usdPerOz > 0 ? usdPerOz : null; }
+  const toGram = (usd, xau) => (usd / xau) * TROY_OZ_G;
   function view(a, mode, fx, gold) {
     if (mode === 'GOLD') {
-      const g = gold || goldNow;
-      if (g) return { parts: [{ cur: 'XAU', inv: a.invK / g, val: a.valK / g, prof: a.profK / g, ret: pct(a.profK, a.invK) }] };
+      const x = gold || goldNow;
+      if (x) {
+        const inv = toGram(a.ui, x), val = toGram(a.uv, x);
+        return { parts: [{ cur: 'XAU', inv, val, prof: val - inv, ret: pct(val - inv, inv) }] };
+      }
       mode = 'KRW'; // 금 시세가 없으면 원화로
     }
     if (mode === 'USD') {
@@ -117,7 +127,7 @@ window.Calc = (function () {
   function scaleRow(r, f) {
     if (f === 1) return r;
     const o = { ...r };
-    ['q', 'invO', 'valO', 'profO', 'invK', 'valK', 'profK', 'priceP', 'fxP'].forEach(k => { o[k] = r[k] * f; });
+    ['q', 'invO', 'valO', 'profO', 'invK', 'valK', 'profK', 'priceP', 'fxP', 'uv', 'ui'].forEach(k => { o[k] = r[k] * f; });
     return o;
   }
   // 자산군 대신 다른 기준(추종 통화 · 자산 성향)으로 묶은 통계
@@ -139,5 +149,5 @@ window.Calc = (function () {
     return { list: def.list, groups };
   }
 
-  return { pct, row, emptyAgg, add, view, setGold, get goldNow() { return goldNow; }, buildModel, buildSnapshotModel, scaleRow, dimension };
+  return { pct, row, emptyAgg, add, view, setGold, toGram, TROY_OZ_G, get goldNow() { return goldNow; }, buildModel, buildSnapshotModel, scaleRow, dimension };
 })();
