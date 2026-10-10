@@ -1,9 +1,9 @@
 // 시장 지표 (market.html) — QQQ · SPY · GLD · 비트코인 · VIX · USD/KRW 환율 · 달러 인덱스 · WTI/브렌트유
 // 일별 종가는 DB fx_daily (과거 = 업로드한 CSV, 이후 = 매시 15분 자동 추가: Google Finance 우선, 안 되면 Yahoo)
-// - 위쪽 기간 버튼(1주~5년): 차트에 보이는 구간 + 환율·달러 인덱스·유가의 '기간 평균' 칸
+// - 위쪽 기간 버튼(1주~10년): 차트에 보이는 구간 + 환율·달러 인덱스·유가의 '기간 평균' 칸
 // - 차트마다 이동평균 체크박스: 5일 · 20일 · 50일 · 120일 · 200일 (자료 개수 기준) · 1년 · 3년 · 5년 (날짜 기준), QQQ 는 200일 ±1% 추가
 (function () {
-  const FX_PERIODS = [['1W', '1주', 7], ['1M', '1개월', 1], ['3M', '3개월', 3], ['1Y', '1년', 12], ['3Y', '3년', 36], ['5Y', '5년', 60]];
+  const FX_PERIODS = [['1W', '1주', 7], ['1M', '1개월', 1], ['3M', '3개월', 3], ['1Y', '1년', 12], ['3Y', '3년', 36], ['5Y', '5년', 60], ['10Y', '10년', 120]];
   const FX_KEY = 'myAsset.invest.fxPeriod';
   let fxPeriod = '1Y';
   try { const s = localStorage.getItem(FX_KEY); if (s === 'MAX' || FX_PERIODS.some(p => p[0] === s)) fxPeriod = s; } catch (e) { /* 무시 */ }
@@ -106,7 +106,7 @@
   async function marketSection() {
     const el = document.getElementById('mkt-sec');
     if (!el) return;
-    const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~5년 + 최대
+    const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~10년 + 최대
     el.innerHTML = `
       <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · KB 선도50</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -132,7 +132,7 @@
       ${m.band ? box('band', '200일 ±1%', BAND) : ''}</div>`;
   }
 
-  // 차트별 표시 기간: 위쪽 버튼과 같은 목록(1주~5년) + '최대'(저장된 전체). 고르면 그 차트만 바뀌고 이 브라우저에 기억
+  // 차트별 표시 기간: 위쪽 버튼과 같은 목록(1주~10년) + '최대'(저장된 전체). 고르면 그 차트만 바뀌고 이 브라우저에 기억
   const CHART_PERIODS = [...FX_PERIODS, ['MAX', '최대', null]];
   const CP_KEY = id => 'myAsset.market.period.' + id;
   function chartPeriod(m) {
