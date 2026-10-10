@@ -61,7 +61,7 @@
         <label class="check"><input type="radio" name="xr" value="range"> <b>기간</b> <span class="muted small">— 이력(매일 08:00 스냅샷)에 저장된 날짜별 현황</span></label>
         <div id="xr-box" hidden style="padding-left:24px">
           <div class="toolbar"><input type="date" id="xr-from" value="${today}" min="${first}" max="${today}"> ~ <input type="date" id="xr-to" value="${today}" min="${first}" max="${today}"></div>
-          <label class="check" style="margin-top:6px"><input type="checkbox" id="xr-now" checked> 끝 날짜가 오늘이면 현재 데이터도 함께</label>
+          <label class="check" style="margin-top:6px"><input type="checkbox" id="xr-now" checked> 끝 날짜가 오늘이면 오늘은 08:00 이력 대신 현재 데이터로</label>
           <div class="small muted" id="xr-cnt" style="margin-top:6px"></div>
         </div>
         <p class="small muted" style="margin:0">이력은 ${first}부터 있습니다. 탭 3개(원화환산·달러환산·통화별), 맨 왼쪽 '기준시각' 열로 시점을 구분합니다.</p>
@@ -73,8 +73,7 @@
             if (b.querySelector('input[name=xr]:checked').value === 'now') { await exportXlsx({ current: true }); api.close(); return; }
             const from = b.querySelector('#xr-from').value, to = b.querySelector('#xr-to').value;
             if (!from || !to || from > to) return err('시작 날짜가 끝 날짜보다 늦습니다.');
-            const snaps = await DataService.getSnapshots({ from, to });
-            const current = to >= today && b.querySelector('#xr-now').checked;
+            const { snaps, current } = await pickDays(from, to);
             if (!snaps.length && !current) return err('그 기간에 저장된 이력이 없습니다.');
             await exportXlsx({ snaps, current, from, to });
             api.close();
@@ -88,10 +87,19 @@
       b.querySelector('#xr-box').hidden = !range;
       if (!range) return;
       const from = b.querySelector('#xr-from').value, to = b.querySelector('#xr-to').value;
-      const n = from && to && from <= to ? (await DataService.getSnapshots({ from, to })).length : 0;
-      const cur = to >= today && b.querySelector('#xr-now').checked;
-      b.querySelector('#xr-cnt').textContent = `이력 ${n}개 시점${cur ? ' + 현재' : ''}을 내려받습니다.`;
+      if (!(from && to && from <= to)) { b.querySelector('#xr-cnt').textContent = ''; return; }
+      const { snaps, current } = await pickDays(from, to);
+      const days = snaps.length + (current ? 1 : 0);
+      b.querySelector('#xr-cnt').textContent = `${days}일치를 내려받습니다 (하루 1개 시점: 지난 날은 08:00 이력${current ? ', 오늘은 현재' : ''}).`;
     };
+    // 하루에 기준시각 1개: 날짜별 이력 1개, 오늘은 '현재'를 넣으면 오늘 08:00 이력은 뺌
+    async function pickDays(from, to) {
+      const current = to >= today && b.querySelector('#xr-now').checked;
+      const byDate = {};
+      (await DataService.getSnapshots({ from, to })).forEach(s => { byDate[s.snapshot_date] = s; }); // 같은 날 여러 개면 마지막 것
+      const snaps = Object.values(byDate).filter(s => !(current && s.snapshot_date === today));
+      return { snaps, current };
+    }
     b.querySelectorAll('input').forEach(el => el.addEventListener('change', upd));
     upd();
   }
