@@ -52,7 +52,7 @@ window.App = (function () {
         <nav class="nav">${PAGES.map(p => `<a href="${p.href}" class="${p.key === pageKey ? 'active' : ''}">${p.label}</a>`).join('')}</nav>
         <div class="hdr-right">
           <span class="chip fx-chip" id="hdr-fx" title="적용 환율 (USD/KRW) — 손익 계산에 쓰는 현재 환율">$1 = <b>…</b> <span class="asof" id="hdr-asof"></span></span>
-          <span class="chip fx-chip" id="hdr-gold" ${app.mode === 'GOLD' ? '' : 'hidden'} title="금환산에 쓰는 금 1g 가격 = 국제 금시세(달러/온스) × 환율 ÷ 31.1035">금 1g = <b>…</b></span>
+          <span class="chip fx-chip" id="hdr-gold" ${app.mode === 'GOLD' ? '' : 'hidden'} title="금환산에 쓰는 금 1g 가격 = 국제 금시세(달러/온스) ÷ 31.1035">금 1g = <b>…</b></span>
           <button type="button" class="btn btn-sm" id="btn-refresh-prices" title="Google Finance·업비트에서 지금 현재가를 다시 가져옵니다 (자동: 매시 정각)">↻ 시세 갱신</button>
           <div class="seg" role="group" aria-label="통화 표시">
             ${MODES.map(m => `<button type="button" data-mode="${m.code}" class="${m.code === app.mode ? 'on' : ''}">${m.label}</button>`).join('')}
@@ -107,9 +107,9 @@ window.App = (function () {
       document.querySelector('#hdr-fx').title = `적용 환율 USD/KRW · ${SOURCE_NAME[st.fx.source] || st.fx.source} · ${Fmt.mdhm(st.fx.as_of)} 기준`;
     }
     if (asof) asof.textContent = st.latestAsOf ? `· 시세 ${Fmt.mdhm(st.latestAsOf)}` : '· 예시 시세';
-    // 금환산 모드: 금 1g 가격 표시
+    // 금환산 모드: 금 1g 가격(달러) 표시
     const goldB = document.querySelector('#hdr-gold b');
-    if (goldB) DataService.getGoldRate().then(gr => { if (gr) { goldB.textContent = Fmt.krw(gr.krwPerGram); document.querySelector('#hdr-gold').title = `금 1g = 국제 금시세 $${Fmt.plain(gr.usdPerOz, 2)}/온스 × 환율 ₩${Fmt.plain(gr.fxRate, 2)} ÷ 31.1035 · ${Fmt.mdhm(gr.as_of)} 기준`; } }).catch(() => {});
+    if (goldB) DataService.getGoldRate().then(gr => { if (gr) { goldB.textContent = Fmt.usd(gr.usdPerOz / 31.1034768); document.querySelector('#hdr-gold').title = `금 1g = 국제 금시세 $${Fmt.plain(gr.usdPerOz, 2)}/온스 ÷ 31.1035 (원화 ${Fmt.krw(gr.krwPerGram)}) · ${Fmt.mdhm(gr.as_of)} 기준`; } }).catch(() => {});
     // 각 화면 상태 줄의 '현재가 기준' 칩
     const parts = [];
     parts.push(st.latestAsOf ? `현재가 기준 <b>${Fmt.mdhm(st.latestAsOf)}</b>` : '현재가 <b>예시 가격</b>');
