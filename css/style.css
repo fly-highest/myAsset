@@ -354,3 +354,7 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .comp-tbl th:first-child { width: 580px; }
 /* 계좌 현황 · 자산 현황 표: 종목명 너비 제한 (넘치면 … 표시, 마우스를 올리면 전체 이름) */
 .nm-clip { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* 투자 화면: USD/KRW 환율 (현재 · 기간 평균 · 차이) */
+.fx-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 8px 0 14px; }
+.fx-stats > div { padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: #fafbfc; }
+@media (max-width: 700px) { .fx-stats { grid-template-columns: 1fr; } }

@@ -67,6 +67,7 @@
       </div>
       ${App.statusBar(status, { showSnapshot: false })}
       ${signalCard(sig)}
+      <div class="sec" id="fx-sec"></div>
       <div class="sec">${UI.totalsCards(model.total, mode, fx)}</div>
       <div class="sec">
         <div class="sec-hd"><h2>목표 대비 현재 자산 현황</h2>
@@ -89,6 +90,74 @@
         </table></div>
         <p class="small muted">비중 칸의 매수·매도 행은 목표 % − 현재 % (%p, 퍼센트포인트) 입니다. 실제 주문 전에 수수료·세금·호가 단위를 따로 확인하세요.</p>
       </div>`;
+    fxSection();
+  }
+
+  // ---------------- USD/KRW 환율: 현재 환율 + 기간 평균(1주~5년) + 차트 ----------------
+  // 일별 환율은 DB fx_daily (과거 = 업로드한 CSV, 이후 = 매시 자동 추가). 기간을 바꾸면 이 영역만 다시 그림
+  const FX_PERIODS = [['1W', '1주', 7], ['1M', '1개월', 1], ['3M', '3개월', 3], ['1Y', '1년', 12], ['3Y', '3년', 36], ['5Y', '5년', 60]];
+  const FX_KEY = 'myAsset.invest.fxPeriod';
+  let fxPeriod = '1Y';
+  try { const s = localStorage.getItem(FX_KEY); if (FX_PERIODS.some(p => p[0] === s)) fxPeriod = s; } catch (e) { /* 무시 */ }
+  const fx2 = v => '₩' + Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  async function fxSection() {
+    const el = document.getElementById('fx-sec');
+    if (!el) return;
+    const [now, hist] = await Promise.all([DataService.getFxRate(), DataService.getFxHistory().catch(() => [])]);
+    const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율' };
+    const p = FX_PERIODS.find(x => x[0] === fxPeriod);
+    const last = hist.length ? hist[hist.length - 1].date : Fmt.todayKST();
+    let from;
+    if (p[0] === '1W') from = Fmt.addDays(last, -p[2]);
+    else { const d = new Date(last + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - p[2]); from = d.toISOString().slice(0, 10); }
+    const rows = hist.filter(r => r.date > from);
+    const avg = rows.length ? rows.reduce((s, r) => s + r.close, 0) / rows.length : null;
+    const hi = rows.length ? Math.max(...rows.map(r => r.close)) : null, lo = rows.length ? Math.min(...rows.map(r => r.close)) : null;
+    const diffPct = avg ? (now.rate / avg - 1) * 100 : null;
+    el.innerHTML = `
+      <div class="card pad">
+        <div class="sec-hd" style="margin-top:0"><h2>USD/KRW 환율</h2>
+          <div class="seg" role="group" aria-label="평균 기간">${FX_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="fx-stats">
+          <div><div class="stat-t">현재 환율</div><div class="stat-v">${fx2(now.rate)}</div>
+            <div class="stat-sub">${SRC[now.source] || now.source} · ${Fmt.mdhm(now.as_of)} 기준</div></div>
+          <div><div class="stat-t">${p[1]} 평균</div><div class="stat-v">${avg ? fx2(avg) : '—'}</div>
+            <div class="stat-sub">${rows.length ? `${rows[0].date} ~ ${rows[rows.length - 1].date} · ${rows.length}거래일 종가 평균` : '데이터 없음'}</div></div>
+          <div><div class="stat-t">현재 − ${p[1]} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${Fmt.pct(diffPct)}</span>`}</div>
+            <div class="stat-sub">${avg ? `${now.rate >= avg ? '+' : '−'}${fx2(Math.abs(now.rate - avg))} · 기간 최고 ${fx2(hi)} / 최저 ${fx2(lo)}` : ''}</div></div>
+        </div>
+        <div class="chart-box" style="height:260px"><canvas id="ch-fx"></canvas></div>
+        <p class="small muted" style="margin:6px 0 0">일별 종가 (2016-10-10부터 저장, 평일마다 자동 추가) · 점선 = ${p[1]} 평균</p>
+      </div>`;
+    el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
+      fxPeriod = b.dataset.fxp;
+      try { localStorage.setItem(FX_KEY, fxPeriod); } catch (e) { /* 무시 */ }
+      fxSection();
+    });
+    if (!rows.length) return;
+    UI.chart('ch-fx', {
+      type: 'line',
+      data: {
+        labels: rows.map(r => r.date),
+        datasets: [
+          { label: 'USD/KRW', data: rows.map(r => r.close), borderColor: '#2457d6', backgroundColor: '#2457d6', borderWidth: 1.8, pointRadius: rows.length <= 31 ? 2 : 0, tension: 0.1 },
+          { label: `${p[1]} 평균`, data: rows.map(() => avg), borderColor: '#d9434f', borderWidth: 1.4, borderDash: [6, 4], pointRadius: 0 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2 } },
+          tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fx2(c.parsed.y)}` } }
+        },
+        scales: {
+          x: { ticks: { maxTicksLimit: 8, callback: function (v) { const d = this.getLabelForValue(v); return rows.length > 400 ? d.slice(0, 7) : Fmt.md(d); } }, grid: { display: false } },
+          y: { ticks: { callback: v => '₩' + Number(v).toLocaleString('ko-KR') }, grid: { color: '#eef1f5' } }
+        }
+      }
+    });
   }
   // QQQ 현재가 vs 200일선 비교 카드
   function signalCard(sig) {
