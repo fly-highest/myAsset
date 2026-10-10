@@ -10,29 +10,31 @@
   const dec2 = v => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fx2 = v => '₩' + dec2(v);
   const usd = v => '$' + dec2(v), usdTick = v => '$' + Number(v).toLocaleString('ko-KR');
+  // 선 색은 모든 차트에서 같게: 종가 = 파랑(두 번째 지표 = 검정), 이동평균은 종류마다 같은 색 (50일 = 주황, 200일 = 빨강 …)
+  const PRICE = '#2457d6', PRICE2 = '#111827', BAND = '#fca5a5';
   // ma: 처음 체크되어 있는 이동평균 (사용자가 바꾸면 이 브라우저에 기억)
   const MARKETS = [
     { id: 'qqq', sma: true, band: true, title: 'QQQ (나스닥100 ETF)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200', 'band'],
-      series: [{ pair: 'QQQ', label: 'QQQ', color: '#2457d6' }] },
+      series: [{ pair: 'QQQ', label: 'QQQ', color: PRICE }] },
     { id: 'spy', sma: true, title: 'SPY (S&P500 ETF)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
-      series: [{ pair: 'SPY', label: 'SPY', color: '#17a589' }] },
+      series: [{ pair: 'SPY', label: 'SPY', color: PRICE }] },
     { id: 'gld', sma: true, title: 'GLD (금 ETF)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
-      series: [{ pair: 'GLD', label: 'GLD', color: '#c9a227' }] },
+      series: [{ pair: 'GLD', label: 'GLD', color: PRICE }] },
     // 비트코인은 주말에도 거래 → 매일 저장, n일선도 달력 날짜 기준
     { id: 'btc', sma: true, everyDay: true, title: '비트코인 (BTC/USD)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
-      series: [{ pair: 'BTC', label: 'BTC', color: '#7a3fb3' }] }, // 50일선(주황)과 구분되게 보라
+      series: [{ pair: 'BTC', label: 'BTC', color: PRICE }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
-      series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: '#2457d6', live: true }] },
+      series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: PRICE, live: true }] },
     { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
-      series: [{ pair: 'DXY', label: '달러 인덱스', color: '#17a589' }] },
+      series: [{ pair: 'DXY', label: '달러 인덱스', color: PRICE }] },
     { id: 'oil', title: '국제 유가 (WTI · 브렌트유, 달러/배럴)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['y1'],
-      series: [{ pair: 'WTI', label: 'WTI유', color: '#b7791f' }, { pair: 'BRENT', label: '브렌트유', color: '#7a3fb3' }] }
+      series: [{ pair: 'WTI', label: 'WTI유', color: PRICE }, { pair: 'BRENT', label: '브렌트유', color: PRICE2 }] }
   ];
 
   // 이동평균 종류: [키, 이름, 길이, 색] — n = 자료 개수(거래일, 비트코인은 날짜), y = 달력 기간(개월)
   const MA_OPTS = [
-    ['n5', '5일', 5, '#9aa5b1'], ['n20', '20일', 20, '#3aa6c9'], ['n50', '50일', 50, '#ef7d22'], ['n120', '120일', 120, '#6c8a2e'],
-    ['n200', '200일', 200, '#d9434f'], ['y1', '1년', 12, '#e05e9b'], ['y3', '3년', 36, '#a0522d'], ['y5', '5년', 60, '#5b6ee1']
+    ['n5', '5일', 5, '#94a3b8'], ['n20', '20일', 20, '#06b6d4'], ['n50', '50일', 50, '#f59e0b'], ['n120', '120일', 120, '#16a34a'],
+    ['n200', '200일', 200, '#dc2626'], ['y1', '1년', 12, '#db2777'], ['y3', '3년', 36, '#92400e'], ['y5', '5년', 60, '#7c3aed']
   ];
   const MA_KEY = id => 'myAsset.market.ma.' + id;
   function maSelected(m) {
@@ -91,7 +93,7 @@
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
     return `<div class="ma-picks"><span class="ma-title">이동평균</span>
       ${MA_OPTS.map(([k, l, , c]) => box(k, l, c)).join('')}
-      ${m.band ? box('band', '200일 ±1%', '#e88d95') : ''}</div>`;
+      ${m.band ? box('band', '200일 ±1%', BAND) : ''}</div>`;
   }
 
   // 한 영역(카드) 그리기: 위쪽 숫자 칸 + 이동평균 체크박스 + 차트
@@ -170,7 +172,7 @@
       });
       if (m.band && sel.includes('band')) {
         const m200 = smaN(hist, 200);
-        [['+1%', 1.01], ['−1%', 0.99]].forEach(([t, f]) => datasets.push({ label: `200일 ${t}`, data: onLabels(hist, m200.map(v => (v == null ? null : v * f))), borderColor: '#e88d95', borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
+        [['+1%', 1.01], ['−1%', 0.99]].forEach(([t, f]) => datasets.push({ label: `200일 ${t}`, data: onLabels(hist, m200.map(v => (v == null ? null : v * f))), borderColor: BAND, borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
       }
     });
     UI.chart('ch-' + m.id, {
