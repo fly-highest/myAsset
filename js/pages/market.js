@@ -20,7 +20,9 @@
       series: [{ pair: 'SPY', label: 'SPY', color: PRICE }] },
     // CNN 공포·탐욕 지수 (미국 주식, 0~100): 0~25 극단적 공포 · 25~45 공포 · 45~55 중립 · 55~75 탐욕 · 75~100 극단적 탐욕
     // 2011-01 ~ 2021-01 은 사용자가 올린 CSV, 그 뒤는 CNN (CNN 의 2021-01-21 이전 값은 50 고정 자리 채움이라 쓰지 않음)
-    { id: 'fng', title: 'CNN 공포·탐욕 지수 (미국 주식, 0~100) · 낮을수록 공포, 높을수록 탐욕', fmt: v => Number(v).toFixed(1), tick: v => v, since: '2011-01-03', ma: ['n50'],
+    // alertWhen: 이동평균과 상관없이 75 이상(극단적 탐욕)일 때만 깜빡임
+    { id: 'fng', title: 'CNN 공포·탐욕 지수 (미국 주식, 0~100) · 낮을수록 공포, 높을수록 탐욕 · 75 이상(극단적 탐욕)일 때만 깜빡임', fmt: v => Number(v).toFixed(1), tick: v => v, since: '2011-01-03', ma: ['n50'],
+      alertWhen: v => (v >= 75 ? `극단적 탐욕: 현재 ${Number(v).toFixed(1)} ≥ 75` : null),
       series: [{ pair: 'FNG', label: '공포·탐욕', color: PRICE }] },
     { id: 'gld', sma: true, title: 'GLD (금 ETF)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'GLD', label: 'GLD', color: PRICE }] },
@@ -224,13 +226,14 @@
     const below = [];
     data.forEach(({ s, hist, cur }) => {
       if (!cur || !hist.length) return;
+      if (m.alertWhen) { const msg = m.alertWhen(cur.v); if (msg) below.push(msg); return; } // 이동평균 대신 정해진 조건으로만 깜빡임
       MA_OPTS.filter(o => sel.includes(o[0])).forEach(([k, l]) => {
         const v = maValues(hist, k)[hist.length - 1];
         if (v != null && (m.alertAbove ? cur.v > v : cur.v < v)) below.push(`${m.series.length > 1 ? s.label + ' ' : ''}현재 ${m.fmt(cur.v)} ${m.alertAbove ? '>' : '<'} ${l} 평균 ${m.fmt(v)}`);
       });
     });
     box.classList.toggle('ma-below', below.length > 0);
-    box.title = below.length ? (m.alertAbove ? '이동평균선 위: ' : '이동평균선 아래: ') + below.join(' · ') : '';
+    box.title = below.length ? (m.alertWhen ? '' : m.alertAbove ? '이동평균선 위: ' : '이동평균선 아래: ') + below.join(' · ') : '';
     box.querySelectorAll('[data-ma]').forEach(cb => cb.onchange = () => {
       const next = [...box.querySelectorAll('[data-ma]:checked')].map(x => x.dataset.ma);
       saveMa(m, next);
