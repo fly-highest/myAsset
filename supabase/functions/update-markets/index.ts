@@ -1,6 +1,6 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
 //   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · GLD · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
-//   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화) · 네이버(한국 국채 3년) · KB(선도아파트 50 · 아파트 PIR) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
+//   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화 · 데이터랩 비트코인 도미넌스) · 네이버(한국 국채 3년) · KB(선도아파트 50 · 아파트 PIR) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
 //   과거 자료는 업로드한 CSV(Investing.com, source = 'CSV') — 그 날짜는 덮어쓰지 않습니다. 평일만, 날짜는 거래소 현지 날짜
@@ -152,6 +152,15 @@ Deno.serve(async (req) => {
     if (!r.ok) throw new Error('Upbit HTTP ' + r.status);
     const list = (await r.json() as { candle_date_time_kst: string; trade_price: number }[]).map((k) => ({ date: k.candle_date_time_kst.slice(0, 10), close: Number(k.trade_price) }));
     return String(await save('BTC_KRW', list, 'UPBIT'));
+  });
+  // 비트코인 도미넌스 (업비트 데이터랩, 업비트 기준 코인 범위의 시가총액 중 비트코인 비중, %) — 매일, UTC 날짜. 오늘(진행 중) 값도 매시 덮어씀
+  await other('BTC_DOM', async () => {
+    const r = await fetch('https://datalab-api.upbit.com/api/v1/indicator/mdom/lines/days', { headers: UA });
+    if (!r.ok) throw new Error('Upbit 데이터랩 HTTP ' + r.status);
+    const pts: { date: string; components: { BTC?: { value: number } } }[] = (await r.json())?.data?.points || [];
+    const list = pts.slice(0, 10).map((p) => ({ date: p.date, close: Math.round(Number(p.components?.BTC?.value) * 1e6) / 1e4 })).filter((x) => x.close > 0);
+    if (!list.length) throw new Error('도미넌스 자료 없음');
+    return String(await save('BTC_DOM', list, 'UPBIT'));
   });
   // 한국 국채 3년 (네이버 금융), 단위 %
   await other('KR3Y', async () => {

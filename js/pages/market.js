@@ -40,6 +40,9 @@
       series: [{ pair: 'UST10Y2Y', label: '10년 − 2년', color: PRICE }] },
     { id: 'kimchi', alertAbove: true, title: '김치 프리미엄 (비트코인, %) · 업비트 원화 시세 ÷ (달러 시세 × 환율) − 1', fmt: ppFmt, tick: v => v + '%', since: '2017-09-25', ma: ['n20'], diffAbs: true, zero: true, everyDay: true,
       series: [{ pair: 'KIMCHI', label: '김치 프리미엄', color: PRICE, derive: kimchiHistory }] },
+    // 비트코인 도미넌스: 업비트 데이터랩 기준 (업비트가 정한 코인 범위의 시가총액 중 비트코인 비중) — 코인게코·TradingView 와 숫자가 다름
+    { id: 'btcdom', title: '비트코인 도미넌스 (%, 업비트 데이터랩 기준) · 코인 시가총액 중 비트코인 비중', fmt: pctFmt, tick: v => v + '%', since: '2017-10-01', ma: ['n50', 'n200'], diffAbs: true, everyDay: true,
+      series: [{ pair: 'BTC_DOM', label: '도미넌스', color: PRICE }] },
     { id: 'cugold', title: '구리 / 금 가격 비율 (×1000) · 오르면 경기 기대, 내리면 안전자산 선호', fmt: v => Number(v).toFixed(3), tick: v => Number(v).toFixed(2), since: '2016-10-11', ma: ['n200'],
       series: [{ pair: 'CUGOLD', label: '구리/금', color: PRICE, derive: copperGoldHistory }] },
     { id: 'ausilver', title: '금 / 은 가격 비율 · 금 1온스로 살 수 있는 은의 온스 · 높으면 은이 상대적으로 쌈', fmt: dec2, tick: v => Number(v).toFixed(0), since: '2000-08-30', ma: ['n200'],
@@ -121,7 +124,7 @@
     if (!el) return;
     const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~10년 + 최대
     el.innerHTML = `
-      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · 구리/금 · 금/은 · KB 선도50 · PIR</span></h2>
+      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · BTC 도미넌스 · 구리/금 · 금/은 · KB 선도50 · PIR</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
