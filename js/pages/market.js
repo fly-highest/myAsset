@@ -24,7 +24,7 @@
     { id: 'btc', sma: true, everyDay: true, title: '비트코인 (BTC/USD)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'BTC', label: 'BTC', color: PRICE }] },
     // VIX: 미국 S&P500 옵션으로 계산한 '공포 지수' (변동성). 단위 없음 — 위쪽 칸은 현재 · 기간 평균
-    // alertAbove: 경고 깜빡임을 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX · 달러 인덱스 · 유가 · 금리는 오를수록 부담)
+    // alertAbove: 경고 깜빡임을 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX · 달러 인덱스 · 유가 · 금리 · 김치 프리미엄은 오를수록 부담)
     { id: 'vix', alertAbove: true, title: 'VIX (CBOE 변동성 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'VIX', label: 'VIX', color: PRICE }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
@@ -38,7 +38,7 @@
       series: [{ pair: 'UST10Y', label: '10년물', color: PRICE }, { pair: 'UST2Y', label: '2년물', color: PRICE2 }] },
     { id: 'spread', title: '장단기 금리차 (미국 10년 − 2년, %p) · 0 아래 = 금리 역전(경기침체 신호)', fmt: ppFmt, tick: v => v + '%p', since: '2016-10-11', ma: [], diffAbs: true, zero: true,
       series: [{ pair: 'UST10Y2Y', label: '10년 − 2년', color: PRICE }] },
-    { id: 'kimchi', title: '김치 프리미엄 (비트코인, %) · 업비트 원화 시세 ÷ (달러 시세 × 환율) − 1', fmt: ppFmt, tick: v => v + '%', since: '2017-09-25', ma: ['n20'], diffAbs: true, zero: true, everyDay: true,
+    { id: 'kimchi', alertAbove: true, title: '김치 프리미엄 (비트코인, %) · 업비트 원화 시세 ÷ (달러 시세 × 환율) − 1', fmt: ppFmt, tick: v => v + '%', since: '2017-09-25', ma: ['n20'], diffAbs: true, zero: true, everyDay: true,
       series: [{ pair: 'KIMCHI', label: '김치 프리미엄', color: PRICE, derive: kimchiHistory }] },
     { id: 'cugold', title: '구리 / 금 가격 비율 (×1000) · 오르면 경기 기대, 내리면 안전자산 선호', fmt: v => Number(v).toFixed(3), tick: v => Number(v).toFixed(2), since: '2016-10-11', ma: ['n200'],
       series: [{ pair: 'CUGOLD', label: '구리/금', color: PRICE, derive: copperGoldHistory }] },
