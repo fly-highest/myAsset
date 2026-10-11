@@ -201,9 +201,9 @@ Deno.serve(async (req) => {
       return String(await save(pair, list, 'FRED'));
     });
   }
-  // CNN 공포·탐욕 지수 (0~100, 비공식)
+  // CNN 공포·탐욕 지수 (0~100, 비공식). 날짜 없이 부르면 최근 약 1년 — 날짜를 붙이면 2020-07-14 이전은 HTTP 500
   await other('FNG', async () => {
-    const r = await fetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2016-10-10', { headers: { ...BROWSER, Referer: 'https://edition.cnn.com/', Origin: 'https://edition.cnn.com' } });
+    const r = await fetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata', { headers: { ...BROWSER, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36', Accept: 'application/json', Referer: 'https://www.cnn.com/markets/fear-and-greed' } });
     if (!r.ok) throw new Error('CNN HTTP ' + r.status);
     const pts: { x: number; y: number }[] = (await r.json())?.fear_and_greed_historical?.data || [];
     if (!pts.length) throw new Error('CNN 자료 없음');

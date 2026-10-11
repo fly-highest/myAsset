@@ -27,6 +27,9 @@
     // alertAbove: 경고 깜빡임을 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX · 달러 인덱스 · 유가 · 금리 · 김치 프리미엄은 오를수록 부담)
     { id: 'vix', alertAbove: true, title: 'VIX (CBOE 변동성 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'VIX', label: 'VIX', color: PRICE }] },
+    // CNN 공포·탐욕 지수 (미국 주식, 0~100): 0~25 극단적 공포 · 25~45 공포 · 45~55 중립 · 55~75 탐욕 · 75~100 극단적 탐욕
+    { id: 'fng', title: 'CNN 공포·탐욕 지수 (미국 주식, 0~100) · 낮을수록 공포, 높을수록 탐욕', fmt: v => Number(v).toFixed(1), tick: v => v, since: '2021-01-22', ma: ['n50'], // CNN 자료는 2021-01-21 까지 50 고정(자리 채움 값) → 그 전은 저장하지 않음
+      series: [{ pair: 'FNG', label: '공포·탐욕', color: PRICE }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: PRICE, live: true }] },
     { id: 'dxy', alertAbove: true, title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
@@ -124,7 +127,7 @@
     if (!el) return;
     const p = CHART_PERIODS.find(x => x[0] === fxPeriod); // 위쪽 버튼도 1주~10년 + 최대
     el.innerHTML = `
-      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · BTC 도미넌스 · 구리/금 · 금/은 · KB 선도50 · PIR</span></h2>
+      <div class="sec-hd"><h2>지표별 추이 <span class="muted small">· 주식·금·비트코인 · 변동성 · 공포·탐욕 · 환율·달러 · 유가 · 금리 · 김치 프리미엄 · BTC 도미넌스 · 구리/금 · 금/은 · KB 선도50 · PIR</span></h2>
         <div class="seg" role="group" aria-label="평균 기간">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-fxp="${k}" class="${k === fxPeriod ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${MARKETS.map(m => `<div class="card pad mkt-card" id="mkt-${m.id}"><div class="muted small">불러오는 중…</div></div>`).join('')}`;
     el.querySelectorAll('[data-fxp]').forEach(b => b.onclick = () => {
@@ -160,7 +163,7 @@
   async function marketPanel(m, pTop) {
     const own = chartPeriod(m), p = own || pTop;
     const pName = p[0] === 'MAX' ? '전체 기간' : p[1];
-    const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율', CSV: 'Investing.com', YAHOO: 'Yahoo Finance', TREASURY: '미 재무부', UPBIT: '업비트', NAVER: '네이버 금융', KB: 'KB부동산', FRED: 'FRED', CALC: '계산값' };
+    const SRC = { GOOGLE: 'Google Finance', ER_API: 'open.er-api.com', MOCK: '예시 환율', CSV: 'Investing.com', YAHOO: 'Yahoo Finance', TREASURY: '미 재무부', UPBIT: '업비트', NAVER: '네이버 금융', KB: 'KB부동산', FRED: 'FRED', CNN: 'CNN', CALC: '계산값' };
     const now = lastNow || await DataService.getFxRate();
     const data = await Promise.all(m.series.map(async s => {
       const hist = s.derive ? await s.derive() : await DataService.getFxHistory(s.pair);
