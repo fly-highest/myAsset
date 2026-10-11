@@ -23,6 +23,7 @@
     // alertWhen: 이동평균과 상관없이 75 이상(극단적 탐욕)일 때만 깜빡임
     { id: 'fng', title: 'CNN 공포·탐욕 지수 (미국 주식, 0~100) · 낮을수록 공포, 높을수록 탐욕 · 75 이상(극단적 탐욕)일 때만 깜빡임', fmt: v => Number(v).toFixed(1), tick: v => v, since: '2011-01-03', ma: ['n50'],
       alertWhen: v => (v >= 75 ? `극단적 탐욕: 현재 ${Number(v).toFixed(1)} ≥ 75` : null),
+      grade: fngGrade, gradeNote: '기준: 0~25 미만 극단적 공포 · 25~45 미만 공포 · 45~55 미만 중립 · 55~75 미만 탐욕 · 75 이상 극단적 탐욕',
       series: [{ pair: 'FNG', label: '공포·탐욕', color: PRICE }] },
     { id: 'gld', sma: true, title: 'GLD (금 ETF)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'GLD', label: 'GLD', color: PRICE }] },
@@ -61,6 +62,10 @@
     { id: 'pir', title: '소득 대비 주택가격 PIR (KB 아파트담보대출, 배 · 분기, 2008~) · 연소득을 몇 년 모아야 아파트를 사는지', fmt: v => dec2(v) + '배', tick: v => v + '배', since: '2008-03', ma: [], monthly: true, quarterly: true,
       series: [{ pair: 'KB_PIR_SEOUL', label: '서울', color: PRICE }, { pair: 'KB_PIR_GG', label: '경기', color: PRICE2 }] }
   ];
+  // CNN 공포·탐욕 등급 (CNN 이 붙인 등급과 같은 경계: 25 · 45 · 55 · 75)
+  function fngGrade(v) {
+    return v < 25 ? '극단적 공포 (Extreme Fear)' : v < 45 ? '공포 (Fear)' : v < 55 ? '중립 (Neutral)' : v < 75 ? '탐욕 (Greed)' : '극단적 탐욕 (Extreme Greed)';
+  }
   function pctFmt(v) { return dec2(v) + '%'; }
   function ppFmt(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + dec2(Math.abs(v)) + '%'; }
   // 날짜 → 값 (그 날짜에 없으면 그 전 마지막 값)
@@ -205,8 +210,8 @@
         const diffPct = c.avg && cur ? (m.diffAbs ? cur.v - c.avg : pct(cur.v, c.avg)) : null; // diffAbs: 차이(단위 그대로)
         const name = m.series.length > 1 ? `${s.label} ` : '';
         return `<div class="fx-stats">
-          <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}</div>
-            <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div></div>
+          <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}${cur && m.grade ? ` <span class="grade">${m.grade(cur.v)}</span>` : ''}</div>
+            <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div>${m.gradeNote ? `<div class="stat-sub">${m.gradeNote}</div>` : ''}</div>
           <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
             <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.quarterly ? '개 분기' : m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
           <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
