@@ -126,7 +126,9 @@
     const last = hist.length ? hist[hist.length - 1].date : Fmt.todayKST();
     const rows = hist.filter(r => r.date > startOf(last));
     const avg = rows.length ? rows.reduce((s, r) => s + r.close, 0) / rows.length : null;
-    return { rows, avg, hi: rows.length ? Math.max(...rows.map(r => r.close)) : null, lo: rows.length ? Math.min(...rows.map(r => r.close)) : null };
+    let hiRow = null, loRow = null; // 기간 내 최고 · 최저 (같은 값이면 가장 최근 날짜)
+    rows.forEach(r => { if (!hiRow || r.close >= hiRow.close) hiRow = r; if (!loRow || r.close <= loRow.close) loRow = r; });
+    return { rows, avg, hi: hiRow ? hiRow.close : null, lo: loRow ? loRow.close : null, hiRow, loRow };
   }
 
   let lastNow = null;
@@ -215,7 +217,7 @@
           <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
             <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.quarterly ? '개 분기' : m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
           <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
-            <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.diffAbs ? dec2(Math.abs(cur.v - c.avg)) + '%p' : m.fmt(Math.abs(cur.v - c.avg))} · 기간 최고 ${m.fmt(c.hi)} / 최저 ${m.fmt(c.lo)}` : ''}</div></div>
+            <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.diffAbs ? dec2(Math.abs(cur.v - c.avg)) + '%p' : m.fmt(Math.abs(cur.v - c.avg))}` : ''}</div></div>
         </div>`;
       }).join('');
     }
@@ -254,9 +256,12 @@
     if (!labels.length) return;
     const onLabels = (hist, vals) => { const mp = {}; hist.forEach((r, i) => { mp[r.date] = vals[i]; }); return labels.map(d => (d in mp ? mp[d] : null)); };
     const datasets = [];
-    data.forEach(({ s, hist }, si) => {
+    data.forEach(({ s, hist, c }, si) => {
       const multi = m.series.length > 1;
       datasets.push({ label: s.label, data: onLabels(hist, hist.map(r => r.close)), borderColor: s.color, backgroundColor: s.color, borderWidth: 1.8, pointRadius: labels.length <= 31 ? 2 : 0, tension: 0.1, spanGaps: true });
+      // 선택 기간 안의 최고 · 최저 지점 표시 (값 · 날짜는 EXTREME_LABELS 플러그인이 글자로 그림)
+      if (c.hiRow && c.loRow) datasets.push({ label: '', data: labels.map(d => (d === c.hiRow.date ? c.hiRow.close : d === c.loRow.date ? c.loRow.close : null)), showLine: false,
+        pointRadius: 4, pointHoverRadius: 4, pointBackgroundColor: '#fff', pointBorderColor: s.color, pointBorderWidth: 2, extremes: { hi: c.hiRow, lo: c.loRow, multi: m.series.length > 1 ? s.label + ' ' : '' } });
       MA_OPTS.filter(o => sel.includes(o[0])).forEach(([k, l, , color]) => {
         datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, maValues(hist, k)), borderColor: color, borderWidth: 1.4,
           borderDash: si > 0 ? [2, 3] : (k[0] === 'y' ? [6, 4] : []), pointRadius: 0, tension: 0.1, spanGaps: true });
@@ -270,6 +275,7 @@
     UI.chart('ch-' + m.id, {
       type: 'line',
       data: { labels, datasets },
+      plugins: [EXTREME_LABELS(m.fmt)],
       options: {
         responsive: true, maintainAspectRatio: false, animation: false, layout: { padding: { top: 26 } }, // 오른쪽 위 체크박스 자리
         interaction: { mode: 'index', intersect: false },
@@ -279,10 +285,35 @@
         },
         scales: {
           x: { ticks: { maxTicksLimit: 8, callback: function (v) { const d = this.getLabelForValue(v); return labels.length > 400 || m.monthly ? d.slice(0, 7) : Fmt.md(d); } }, grid: { display: false } },
-          y: { ticks: { callback: m.tick }, grid: { color: '#eef1f5' } }
+          y: { grace: '10%', ticks: { callback: m.tick }, grid: { color: '#eef1f5' } } // grace: 최고 · 최저 글자가 들어갈 위아래 여백
         }
       }
     });
+  }
+
+  // 차트 플러그인: 최고 · 최저 지점 옆에 '최고 값 (날짜)' · '최저 값 (날짜)' 글자를 그림
+  function EXTREME_LABELS(fmt) {
+    return {
+      id: 'extremeLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea: a } = chart;
+        chart.data.datasets.forEach((ds, i) => {
+          if (!ds.extremes || !chart.isDatasetVisible(i)) return;
+          const meta = chart.getDatasetMeta(i);
+          [['hi', '최고', -9], ['lo', '최저', 16]].forEach(([k, name, dy]) => {
+            const row = ds.extremes[k], idx = chart.data.labels.indexOf(row.date), pt = meta.data[idx];
+            if (!pt) return;
+            const x = pt.x, text = `${ds.extremes.multi}${name} ${fmt(row.close)} (${row.date})`;
+            ctx.save();
+            ctx.font = '600 11px sans-serif';
+            ctx.textAlign = x > a.right - 110 ? 'right' : x < a.left + 110 ? 'left' : 'center';
+            ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.fillStyle = k === 'hi' ? '#dc2626' : '#2457d6';
+            ctx.strokeText(text, x, pt.y + dy); ctx.fillText(text, x, pt.y + dy);
+            ctx.restore();
+          });
+        });
+      }
+    };
   }
 
   async function render() {
