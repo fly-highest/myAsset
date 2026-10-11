@@ -24,17 +24,17 @@
     { id: 'btc', sma: true, everyDay: true, title: '비트코인 (BTC/USD)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'BTC', label: 'BTC', color: PRICE }] },
     // VIX: 미국 S&P500 옵션으로 계산한 '공포 지수' (변동성). 단위 없음 — 위쪽 칸은 현재 · 기간 평균
-    // alertAbove: 경고 깜빡임을 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX 는 오를수록 불안)
+    // alertAbove: 경고 깜빡임을 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX · 달러 인덱스 · 유가 · 금리는 오를수록 부담)
     { id: 'vix', alertAbove: true, title: 'VIX (CBOE 변동성 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'VIX', label: 'VIX', color: PRICE }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
       series: [{ pair: 'USD/KRW', label: 'USD/KRW', color: PRICE, live: true }] },
-    { id: 'dxy', title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
+    { id: 'dxy', alertAbove: true, title: '달러 인덱스 (DXY)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
       series: [{ pair: 'DXY', label: '달러 인덱스', color: PRICE }] },
-    { id: 'oil', title: '국제 유가 (WTI · 브렌트유, 달러/배럴)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['y1'],
+    { id: 'oil', alertAbove: true, title: '국제 유가 (WTI · 브렌트유, 달러/배럴)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['y1'],
       series: [{ pair: 'WTI', label: 'WTI유', color: PRICE }, { pair: 'BRENT', label: '브렌트유', color: PRICE2 }] },
     // 금리·스프레드는 '현재 − 평균'을 %가 아니라 차이(%p)로 보여 줌 (diffAbs)
-    { id: 'ust', title: '미국 국채금리 (10년 · 2년, %)', fmt: pctFmt, tick: v => v + '%', since: '2016-10-11', ma: [], diffAbs: true, unitSrc: '미 재무부 공식 금리',
+    { id: 'ust', alertAbove: true, title: '미국 국채금리 (10년 · 2년, %)', fmt: pctFmt, tick: v => v + '%', since: '2016-10-11', ma: [], diffAbs: true, unitSrc: '미 재무부 공식 금리',
       series: [{ pair: 'UST10Y', label: '10년물', color: PRICE }, { pair: 'UST2Y', label: '2년물', color: PRICE2 }] },
     { id: 'spread', title: '장단기 금리차 (미국 10년 − 2년, %p) · 0 아래 = 금리 역전(경기침체 신호)', fmt: ppFmt, tick: v => v + '%p', since: '2016-10-11', ma: [], diffAbs: true, zero: true,
       series: [{ pair: 'UST10Y2Y', label: '10년 − 2년', color: PRICE }] },
@@ -44,7 +44,7 @@
       series: [{ pair: 'CUGOLD', label: '구리/금', color: PRICE, derive: copperGoldHistory }] },
     { id: 'ausilver', title: '금 / 은 가격 비율 · 금 1온스로 살 수 있는 은의 온스 · 높으면 은이 상대적으로 쌈', fmt: dec2, tick: v => Number(v).toFixed(0), since: '2000-08-30', ma: ['n200'],
       series: [{ pair: 'AUAG', label: '금/은', color: PRICE, derive: goldSilverHistory }] },
-    { id: 'kr3y', title: '한국 국채 3년 (%)', fmt: pctFmt, tick: v => v + '%', since: '2023-10-11', ma: [], diffAbs: true,
+    { id: 'kr3y', alertAbove: true, title: '한국 국채 3년 (%)', fmt: pctFmt, tick: v => v + '%', since: '2023-10-11', ma: [], diffAbs: true,
       series: [{ pair: 'KR3Y', label: '국채 3년', color: PRICE }] },
     { id: 'kb50', title: 'KB 선도아파트 50 지수 (월간, 2008-12~)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2008-12', ma: ['y1'], monthly: true,
       series: [{ pair: 'KB_LEAD50', label: 'KB 선도50', color: PRICE }] },
