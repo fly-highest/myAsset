@@ -108,7 +108,10 @@ window.UI = (function () {
     const cols = 12 + (editable ? 1 : 0);
     const sortMark = sortBy === 'group' ? ' ▲' : sortBy === 'group-desc' ? ' ▼' : '';
     let body = '';
-    let accounts = model.accounts;
+    // 계좌 필터 (증권사 · 계좌종류, 여러 개 선택). 비어 있으면 전체
+    const fBrokers = opts.brokers || [], fTypes = opts.types || [];
+    const accFiltered = fBrokers.length > 0 || fTypes.length > 0;
+    let accounts = model.accounts.filter(a => (!fBrokers.length || fBrokers.includes(accBroker(a))) && (!fTypes.length || fTypes.includes(accType(a))));
     const brokerAgg = {};
     if (GROUP_KEY) {
       const order = [];
@@ -164,7 +167,10 @@ window.UI = (function () {
       });
     });
     if (!model.accounts.length) body = `<tr><td colspan="${cols}" class="muted center">계좌가 없습니다.</td></tr>`;
-    const tv = Calc.view(model.total, mode, model.fx);
+    else if (!accounts.length) body = `<tr><td colspan="${cols}" class="muted center">선택한 증권사 · 계좌종류에 맞는 계좌가 없습니다.</td></tr>`;
+    // 계좌 필터 중이면 합계도 보이는 계좌만 더함
+    const totAgg = accFiltered ? accounts.reduce((g, a) => { a.rows.forEach(x => Calc.add(g, x.r)); return g; }, Calc.emptyAgg()) : model.total;
+    const tv = Calc.view(totAgg, mode, model.fx);
     return `<div class="tbl-wrap tree-wrap"><table class="tbl tree">
       <thead><tr>
         <th>종목명</th><th>심볼</th>
@@ -175,8 +181,22 @@ window.UI = (function () {
         ${editable ? '<th>관리</th>' : ''}
       </tr></thead>
       <tbody>${body}</tbody>
-      <tfoot><tr><td colspan="7">전체 합계</td><td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv, { split: true })}</td><td class="num">${weight(total ? 100 : 0, false)}</td>${editable ? '<td></td>' : ''}</tr></tfoot>
+      <tfoot><tr><td colspan="7">${accFiltered ? '선택 계좌 합계' : '전체 합계'}</td><td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv, { split: true })}</td><td class="num">${weight(w(totAgg.valK, total), false)}</td>${editable ? '<td></td>' : ''}</tr></tfoot>
     </table></div>`;
+  }
+
+  const accBroker = a => a.broker || '(증권사 없음)';
+  const accType = a => (a.account && a.account.account_type) || '(계좌종류 없음)';
+  // 여러 개 고르는 필터 버튼: 누르면 체크박스 목록이 펼쳐짐 (st[key] = 고른 값 배열, 비면 전체)
+  function multiPick(key, label, values, st) {
+    const sel = st[key] || [];
+    const txt = !sel.length ? '전체' : sel.length === 1 ? sel[0] : `${sel[0]} 외 ${sel.length - 1}`;
+    return `<div class="ms" data-ms="${key}">
+      <button type="button" class="ms-btn${sel.length ? ' on' : ''}" aria-expanded="${st.openMs === key}">${label}: ${esc(txt)} ▾</button>
+      <div class="ms-pop" ${st.openMs === key ? '' : 'hidden'}>
+        ${values.map(v => `<label class="ms-opt"><input type="checkbox" value="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}
+        <div class="ms-ft"><button type="button" class="btn btn-sm" data-ms-all>전체 (선택 해제)</button><button type="button" class="btn btn-sm btn-primary" data-ms-close>닫기</button></div>
+      </div></div>`;
   }
 
   // ---- 계좌 트리 + 필터·정렬·접기 (계좌 현황 / 계좌 관리 공용) ----
@@ -186,6 +206,7 @@ window.UI = (function () {
     return `
       <div class="sec-hd">
         <div class="toolbar">
+          ${opts.accountFilter ? multiPick('brokers', '증권사', [...new Set(model.accounts.map(accBroker))], st) + multiPick('types', '계좌 종류', [...new Set(model.accounts.map(accType))], st) : ''}
           <label class="small muted" for="f-group">자산군 필터</label>
           <select id="f-group" class="inline">
             <option value="ALL">전체</option>
@@ -208,9 +229,24 @@ window.UI = (function () {
         <div class="toolbar"><button type="button" class="btn btn-sm" id="exp-all">모두 펼치기</button><button type="button" class="btn btn-sm" id="col-all">모두 접기</button></div>
       </div>
       ${filterGroup !== 'ALL' ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
-      ${holdingsTree(model, mode, { ...opts, filterGroup, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}) })}`;
+      ${holdingsTree(model, mode, { ...opts, filterGroup, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}), ...(opts.accountFilter ? { brokers: st.brokers, types: st.types } : {}) })}`;
   }
   function bindTree(root, model, st) {
+    // 증권사 · 계좌 종류 필터: 체크할 때마다 바로 반영하고, 목록은 열린 채로 둠 (바깥을 누르거나 [닫기]로 닫힘)
+    root.querySelectorAll('[data-ms]').forEach(box => {
+      const key = box.dataset.ms;
+      box.querySelector('.ms-btn').onclick = () => { st.openMs = st.openMs === key ? null : key; App.rerender(); };
+      box.querySelectorAll('.ms-opt input').forEach(cb => cb.onchange = () => {
+        st[key] = [...box.querySelectorAll('.ms-opt input:checked')].map(x => x.value); st.openMs = key; App.rerender();
+      });
+      box.querySelector('[data-ms-all]').onclick = () => { st[key] = []; st.openMs = key; App.rerender(); };
+      box.querySelector('[data-ms-close]').onclick = () => { st.openMs = null; App.rerender(); };
+    });
+    if (st.openMs && !st._msOutside) {
+      // 바깥을 누르면 닫힘 (다시 그려져 화면에서 사라진 버튼을 누른 경우는 무시)
+      st._msOutside = e => { if (st.openMs && document.contains(e.target) && !e.target.closest('[data-ms]')) { st.openMs = null; App.rerender(); } };
+      document.addEventListener('click', st._msOutside);
+    }
     const gb = root.querySelector('#f-groupby');
     if (gb) gb.onchange = e => { st.groupBy = e.target.value; if (st.onGroupBy) st.onGroupBy(st.groupBy); App.rerender(); };
     root.querySelector('#f-group').onchange = e => { st.filterGroup = e.target.value; App.rerender(); };

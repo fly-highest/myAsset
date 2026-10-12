@@ -2,7 +2,7 @@
 // - 맨 위: 자산군별로 현재 어떤 종목이 매핑되어 있는지 표시
 // - 하위 메뉴: 자산 구성 관리 / 계좌 관리 / 업로드
 (function () {
-  const st = { filterGroup: 'ALL', sortBy: 'default', collapsed: new Set() };
+  const st = { filterGroup: 'ALL', sortBy: 'default', collapsed: new Set(), brokers: [], types: [] };
   const TABS = [['composition', '자산 구성 관리'], ['accounts', '계좌 관리'], ['upload', '업로드']];
   const hashTab = () => (TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : null);
   let tab = hashTab() || 'composition';
@@ -405,7 +405,7 @@
         <button type="button" class="btn" id="btn-export">엑셀 다운로드</button>
         <span class="small muted">받은 엑셀을 고쳐서 [업로드] 메뉴로 올리면 그 내용이 현재 계좌 현황이 됩니다.</span>
       </div>
-      ${UI.treeSection(model, mode, st, { editable: true, byBroker: true, showUpdated: true })}`;
+      ${UI.treeSection(model, mode, st, { editable: true, byBroker: true, showUpdated: true, accountFilter: true })}`;
   }
 
   // ---------------- 업로드 ----------------

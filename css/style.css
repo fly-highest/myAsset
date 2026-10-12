@@ -377,3 +377,11 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 /* 시장 지표: 차트 제목 + 차트별 기간 버튼 */
 .mkt-hd { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .seg.seg-sm button { padding: 3px 8px; font-size: 12px; }
+/* 계좌 관리: 증권사 · 계좌 종류 여러 개 고르기 버튼 */
+.ms { position: relative; }
+.ms-btn { border: 1px solid #cfd5df; background: #fff; border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.ms-btn.on { border-color: var(--primary); color: var(--primary); font-weight: 600; background: #eef3ff; }
+.ms-pop { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 220px; max-height: 320px; overflow: auto; background: #fff; border: 1px solid #cfd5df; border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, .14); padding: 8px; }
+.ms-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+.ms-opt:hover { background: #f3f5f9; }
+.ms-ft { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid #eef1f5; margin-top: 6px; padding-top: 8px; }
