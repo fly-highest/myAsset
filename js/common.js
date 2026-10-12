@@ -38,7 +38,14 @@ window.App = (function () {
     if (!renderFn) return;
     if (rendering) { pending = true; return; }
     rendering = true;
-    try { await renderFn(); updatePriceInfo(); }
+    // 다시 그려도 보던 자리 유지: 페이지 스크롤 + 표(.tbl-wrap) 안 스크롤 위치를 기억했다가 되돌림
+    const keepY = window.scrollY;
+    const keepTbl = [...document.querySelectorAll('#main .tbl-wrap')].map(el => [el.scrollTop, el.scrollLeft]);
+    try {
+      await renderFn(); updatePriceInfo();
+      document.querySelectorAll('#main .tbl-wrap').forEach((el, i) => { if (keepTbl[i]) { el.scrollTop = keepTbl[i][0]; el.scrollLeft = keepTbl[i][1]; } });
+      if (Math.abs(window.scrollY - keepY) > 1) window.scrollTo(0, keepY);
+    }
     catch (e) { console.error(e); toast('화면을 그리는 중 오류가 발생했습니다: ' + e.message, 'error'); }
     rendering = false;
     if (pending) { pending = false; rerender(); }
