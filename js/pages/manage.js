@@ -581,6 +581,28 @@
     holdingForm({ account, inst });
   }
 
+  // ---------------- 숫자 입력 칸 3자리 콤마 ----------------
+  // 화면에는 1,234.5 처럼 보이고, 저장할 때는 noComma 로 콤마를 뺀 값을 씁니다.
+  function withComma(v) {
+    const s = String(v ?? '').replace(/[^0-9.]/g, '');
+    if (!s) return '';
+    const [i, ...d] = s.split('.');
+    const int = i.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return d.length ? `${int || '0'}.${d.join('')}` : int;
+  }
+  function noComma(v) { return String(v ?? '').replace(/,/g, ''); }
+  // 입력하는 동안 콤마를 다시 찍되, 커서는 같은 숫자 뒤에 그대로 둠
+  function bindComma(el) {
+    el.addEventListener('input', () => {
+      const pos = el.selectionStart ?? el.value.length;
+      const digitsBefore = el.value.slice(0, pos).replace(/[^0-9.]/g, '').length;
+      el.value = withComma(el.value);
+      let p = 0, n = 0;
+      while (p < el.value.length && n < digitsBefore) { if (/[0-9.]/.test(el.value[p])) n++; p++; }
+      el.setSelectionRange(p, p);
+    });
+  }
+
   // ---------------- 보유 추가/수정 폼 ----------------
   async function holdingForm({ account, inst, holding }) {
     const fx = (await DataService.getFxRate()).rate;
@@ -601,10 +623,10 @@
         </div>
         <div class="field"><label>종목</label><div class="ro"><b>${esc(inst.name)}</b> <span class="muted small">${esc(inst.symbol)} · ${esc(inst.exchange)} · ${esc(inst.asset_type)} · ${esc(inst.currency)}</span></div></div>
         <div class="field"><label>${isCash ? '금액 (예수금)' : '수량'}</label>
-          <div class="input-unit"><input type="number" id="h-q" step="any" min="0" value="${v.quantity}"><span>${esc(qtyUnit)}</span></div></div>
+          <div class="input-unit"><input type="text" inputmode="decimal" autocomplete="off" id="h-q" value="${withComma(v.quantity)}"><span>${esc(qtyUnit)}</span></div></div>
         ${isCash ? '<div class="small muted">현금은 수량(금액)만 입력합니다. 평균매입가는 1로 고정됩니다.</div>' : `
         <div class="field"><label>평균매입가 (${inst.currency})</label>
-          <div class="input-unit"><span>${unit}</span><input type="number" id="h-ap" step="any" min="0" value="${v.avg_price}"></div>
+          <div class="input-unit"><span>${unit}</span><input type="text" inputmode="decimal" autocomplete="off" id="h-ap" value="${withComma(v.avg_price)}"></div>
           <div class="hint">추가 매수 시 증권사에 표시된 평균단가를 그대로 입력하세요.</div></div>`}
         ${isUSD ? `<div class="field"><label>매입 평균환율 (USD/KRW)</label>
           <div class="input-unit"><span>₩</span><input type="number" id="h-fx" step="any" min="0" value="${v.avg_fx_rate}"></div>
@@ -621,10 +643,10 @@
         <div class="notice" id="h-err" hidden></div></div>`,
       buttons: [{ label: '취소' }, {
         label: '저장', kind: 'primary', onClick: async api => {
-          const q = api.body.querySelector('#h-q').value;
+          const q = noComma(api.body.querySelector('#h-q').value);
           const data = {
             account_id: account.id, instrument_id: inst.id, quantity: q === '' ? NaN : q,
-            avg_price: isCash ? 1 : api.body.querySelector('#h-ap').value,
+            avg_price: isCash ? 1 : noComma(api.body.querySelector('#h-ap').value),
             avg_fx_rate: isUSD ? api.body.querySelector('#h-fx').value : 1
           };
           try {
@@ -635,6 +657,7 @@
         }
       }]
     });
+    ['#h-q', '#h-ap'].forEach(sel => { const el = m.body.querySelector(sel); if (el) bindComma(el); });
     // [현재가 직접 입력]: 입력 칸을 열고, 저장하면 바로 평가금액·손익에 반영
     const tg = m.body.querySelector('#mp-toggle');
     if (tg) {
