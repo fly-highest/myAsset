@@ -405,7 +405,7 @@
         <button type="button" class="btn" id="btn-export">엑셀 다운로드</button>
         <span class="small muted">받은 엑셀을 고쳐서 [업로드] 메뉴로 올리면 그 내용이 현재 계좌 현황이 됩니다.</span>
       </div>
-      ${UI.treeSection(model, mode, st, { editable: true, byBroker: true, showUpdated: true, accountFilter: true })}`;
+      ${UI.treeSection(model, mode, st, { editable: true, byBroker: true, showUpdated: true, accountFilter: true, tall: true })}`;
   }
 
   // ---------------- 업로드 ----------------

@@ -173,7 +173,7 @@ window.UI = (function () {
     // 계좌 필터 중이면 합계도 보이는 계좌만 더함
     const totAgg = accFiltered ? accounts.reduce((g, a) => { a.rows.forEach(x => Calc.add(g, x.r)); return g; }, Calc.emptyAgg()) : model.total;
     const tv = Calc.view(totAgg, mode, model.fx);
-    return `<div class="tbl-wrap tree-wrap"><table class="tbl tree">
+    return `<div class="tbl-wrap tree-wrap${opts.tall ? ' tall' : ''}"><table class="tbl tree">
       <thead><tr>
         <th>종목명</th><th>심볼</th>
         <th><button type="button" class="th-sort" data-sort-group title="자산군 순으로 정렬">자산군${sortMark}</button></th>
@@ -281,7 +281,12 @@ window.UI = (function () {
     const wrap = document.querySelector('#main .tree-wrap');
     if (!wrap) return;
     const top = wrap.getBoundingClientRect().top + window.scrollY;
-    wrap.style.maxHeight = Math.max(360, window.innerHeight - top - 16) + 'px';
+    // tall(계좌 관리처럼 표 위에 다른 내용이 많은 화면): 남은 높이 대신
+    // 화면 높이에서 고정 머리줄만 뺀 만큼 길게 — 조금 내려서 보면 표가 화면을 꽉 채움
+    const header = (document.getElementById('app-header') || { offsetHeight: 0 }).offsetHeight;
+    const rest = window.innerHeight - top - 16;
+    const full = window.innerHeight - header - 24;
+    wrap.style.maxHeight = Math.max(360, wrap.classList.contains('tall') ? full : rest) + 'px';
   }
   window.addEventListener('resize', fitTree);
 
