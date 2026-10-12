@@ -6,7 +6,8 @@
   let savedGB = null;
   try { savedGB = localStorage.getItem(GB_KEY); } catch (e) { /* 저장소 사용 불가 */ }
   const st = {
-    groups: [], brokers: [], types: [], sortBy: 'default', collapsed: new Set(),
+    filterKey: 'myAsset.accounts.filters', ...UI.loadFilters('myAsset.accounts.filters'), // 필터 선택은 이 브라우저에 기억
+    sortBy: 'default', collapsed: new Set(),
     groupBy: ['broker', 'type', 'name'].includes(savedGB) ? savedGB : 'broker',
     onGroupBy: v => { try { localStorage.setItem(GB_KEY, v); } catch (e) { /* 무시 */ } }
   };

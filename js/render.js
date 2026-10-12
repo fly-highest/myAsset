@@ -204,10 +204,26 @@ window.UI = (function () {
       </div></div>`;
   }
 
+  // 필터 선택(증권사 · 계좌 종류 · 자산군)을 이 브라우저에 기억 — 화면마다 따로 (st.filterKey)
+  function loadFilters(filterKey) {
+    try {
+      const o = JSON.parse(localStorage.getItem(filterKey) || '{}');
+      const arr = v => (Array.isArray(v) ? v.map(String) : []);
+      return { groups: arr(o.groups), brokers: arr(o.brokers), types: arr(o.types) };
+    } catch (e) { return { groups: [], brokers: [], types: [] }; }
+  }
+  function saveFilters(st) {
+    if (!st.filterKey) return;
+    try { localStorage.setItem(st.filterKey, JSON.stringify({ groups: st.groups || [], brokers: st.brokers || [], types: st.types || [] })); } catch (e) { /* 저장소 사용 불가 */ }
+  }
+
   // ---- 계좌 트리 + 필터·정렬·접기 (계좌 현황 / 계좌 관리 공용) ----
   // st = { groups:[], brokers:[], types:[], sortBy, collapsed:Set } 화면별 상태 객체
   function treeSection(model, mode, st, opts = {}) {
     const { sortBy } = st;
+    // 기억해 둔 선택 중 지금은 없는 값(삭제된 증권사 · 자산군 등)은 버림
+    const keep = (k, list) => { if (st[k]) st[k] = st[k].filter(v => list.includes(v)); };
+    keep('brokers', model.accounts.map(accBroker)); keep('types', model.accounts.map(accType)); keep('groups', [...Groups.codes, 'UNASSIGNED']);
     const groups = st.groups || [];
     return `
       <div class="sec-hd">
@@ -238,9 +254,9 @@ window.UI = (function () {
       const key = box.dataset.ms;
       box.querySelector('.ms-btn').onclick = () => { st.openMs = st.openMs === key ? null : key; App.rerender(); };
       box.querySelectorAll('.ms-opt input').forEach(cb => cb.onchange = () => {
-        st[key] = [...box.querySelectorAll('.ms-opt input:checked')].map(x => x.value); st.openMs = key; App.rerender();
+        st[key] = [...box.querySelectorAll('.ms-opt input:checked')].map(x => x.value); st.openMs = key; saveFilters(st); App.rerender();
       });
-      box.querySelector('[data-ms-all]').onclick = () => { st[key] = []; st.openMs = key; App.rerender(); };
+      box.querySelector('[data-ms-all]').onclick = () => { st[key] = []; st.openMs = key; saveFilters(st); App.rerender(); };
       box.querySelector('[data-ms-close]').onclick = () => { st.openMs = null; App.rerender(); };
     });
     if (st.openMs && !st._msOutside) {
@@ -435,5 +451,5 @@ window.UI = (function () {
     });
   }
 
-  return { amt, prof, ret, weight, w, priceCell, statusTable, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, chart, moneyTick, pickInstrument };
+  return { amt, prof, ret, weight, w, priceCell, statusTable, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, loadFilters, chart, moneyTick, pickInstrument };
 })();
