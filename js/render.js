@@ -294,7 +294,8 @@ window.UI = (function () {
   // entries: [{ label: '2026-10-09', sub: '08:00', tag: '', model }]  (model = Calc.buildModel / buildSnapshotModel 결과)
   // 총 평가·투자·손익·수익률·환율 + 자산군별 총액 7칸 → 자산군별 비중 7칸.
   // 혼합 모드는 줄마다 원화 줄 + 달러 줄 (비중은 그 통화 자산 안에서)
-  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap', list = Groups.list, dimLabel = '자산군' } = {}) {
+  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap', list = Groups.list, dimLabel = '자산군', pickable = false } = {}) {
+    // pickable: 머리글의 묶음 이름(성장 · 현금 …)을 누를 수 있는 버튼으로 (data-pick-dim = 코드)
     // list·dimLabel: 자산군 대신 추종 통화·자산 성향으로 묶을 때 (model.groups 도 그 기준으로 묶은 값)
     const mixed = mode === 'MIXED';
     const gcell = (i, html) => `<td class="num${i === 0 ? ' g-first' : ''}">${html}</td>`;
@@ -329,7 +330,7 @@ window.UI = (function () {
           <th colspan="${list.length}" class="center g-first">${dimLabel}별 총액</th>
           <th colspan="${list.length}" class="center g-first">${dimLabel}별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
         </tr>
-        <tr>${[0, 1].map(() => list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}"><span class="dot" style="background:${g.color}"></span>${g.name}</th>`).join('')).join('')}</tr>
+        <tr>${[0, 1].map(() => list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}">${pickable ? `<button type="button" class="th-pick" data-pick-dim="${esc(g.code)}" title="${esc(g.name)} 구성 종목 보기">` : ''}<span class="dot" style="background:${g.color}"></span>${g.name}${pickable ? '</button>' : ''}</th>`).join('')).join('')}</tr>
       </thead>
       <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + list.length * 2}" class="muted">${empty}</td></tr>`}</tbody>
     </table></div>`;

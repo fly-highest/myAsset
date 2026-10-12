@@ -385,3 +385,6 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .ms-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; }
 .ms-opt:hover { background: #f3f5f9; }
 .ms-ft { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid #eef1f5; margin-top: 6px; padding-top: 8px; }
+/* 자산 현황: 묶음 이름(성장 · 현금 …)을 눌러 구성 종목 보기 */
+.g-name, .th-pick { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.g-name:hover, .th-pick:hover { color: var(--primary); text-decoration: underline; }

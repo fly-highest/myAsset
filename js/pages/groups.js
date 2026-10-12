@@ -37,7 +37,7 @@
       const insts = Object.values(G.insts).sort((a, b) => b.agg.valK - a.agg.valK);
       const isOpen = openGroups.has(gk);
       body += `<tr class="g-row" id="${dim === 'group' ? g.code : esc(gk)}">
-        <td><button type="button" class="tg" data-tg-group="${esc(gk)}">${isOpen ? '▾' : '▸'}</button><span class="dot" style="background:${g.color}"></span>${esc(g.name)}
+        <td><button type="button" class="tg" data-tg-group="${esc(gk)}">${isOpen ? '▾' : '▸'}</button><button type="button" class="g-name" data-tg-group="${esc(gk)}" title="눌러서 구성 종목 ${isOpen ? '접기' : '보기'}"><span class="dot" style="background:${g.color}"></span>${esc(g.name)}</button>
           <span class="muted small">${insts.length}종목</span></td>
         <td></td><td></td><td></td>
         <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v)}</td><td class="num">${UI.ret(v)}</td>
@@ -103,7 +103,7 @@
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
       <div class="sec">
         <div class="sec-hd"><h2>현재 자산 현황 <span class="muted small">· ${D.label}별</span></h2><span class="small muted">이력의 날짜별 자산 현황과 같은 양식 · 현재 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span></div>
-        ${UI.statusTable([{ label: '현재', sub: ps.latestAsOf ? `시세 ${Fmt.mdhm(ps.latestAsOf)}` : '예시 시세', model: { ...model, groups: D.groups } }], mode, { firstHeader: '기준', wrapClass: 'now-wrap', list: D.list, dimLabel: D.label })}
+        ${UI.statusTable([{ label: '현재', sub: ps.latestAsOf ? `시세 ${Fmt.mdhm(ps.latestAsOf)}` : '예시 시세', model: { ...model, groups: D.groups } }], mode, { firstHeader: '기준', wrapClass: 'now-wrap', list: D.list, dimLabel: D.label, pickable: true })}
       </div>
       <div class="sec">
         <div class="tbl-wrap"><table class="tbl">
@@ -127,6 +127,13 @@
     }));
     main.querySelectorAll('[data-tg-inst]').forEach(b => b.addEventListener('click', () => {
       const c = b.dataset.tgInst; openInsts.has(c) ? openInsts.delete(c) : openInsts.add(c); App.rerender();
+    }));
+    // 위쪽 '현재 자산 현황' 표 머리글의 이름(성장 · 현금 …)을 누르면: 아래 표에서 그 묶음을 펼치고 그 자리로 이동
+    main.querySelectorAll('[data-pick-dim]').forEach(b => b.addEventListener('click', () => {
+      const code = b.dataset.pickDim, gk = dim + '|' + code;
+      openGroups.add(gk);
+      pendingHash = dim === 'group' ? code : gk;
+      App.rerender();
     }));
     main.querySelector('#exp-all').addEventListener('click', () => { D.list.forEach(g => openGroups.add(dim + '|' + g.code)); App.rerender(); });
     main.querySelector('#col-all').addEventListener('click', () => { openGroups.clear(); openInsts.clear(); App.rerender(); });
