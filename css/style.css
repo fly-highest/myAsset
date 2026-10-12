@@ -387,4 +387,5 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .ms-ft { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid #eef1f5; margin-top: 6px; padding-top: 8px; }
 /* 자산 현황: 묶음 이름(성장 · 현금 …)을 눌러 구성 종목 보기 */
 .g-name, .th-pick { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.g-name { padding: 6px 10px 6px 0; } /* 누르는 범위를 넓게 (이름 + 종목 수) */
 .g-name:hover, .th-pick:hover { color: var(--primary); text-decoration: underline; }

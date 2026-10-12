@@ -37,8 +37,8 @@
       const insts = Object.values(G.insts).sort((a, b) => b.agg.valK - a.agg.valK);
       const isOpen = openGroups.has(gk);
       body += `<tr class="g-row" id="${dim === 'group' ? g.code : esc(gk)}">
-        <td><button type="button" class="tg" data-tg-group="${esc(gk)}">${isOpen ? '▾' : '▸'}</button><button type="button" class="g-name" data-tg-group="${esc(gk)}" title="눌러서 구성 종목 ${isOpen ? '접기' : '보기'}"><span class="dot" style="background:${g.color}"></span>${esc(g.name)}</button>
-          <span class="muted small">${insts.length}종목</span></td>
+        <td><button type="button" class="tg" data-tg-group="${esc(gk)}">${isOpen ? '▾' : '▸'}</button><button type="button" class="g-name" data-tg-group="${esc(gk)}" title="눌러서 구성 종목 ${isOpen ? '접기' : '보기'}"><span class="dot" style="background:${g.color}"></span>${esc(g.name)}
+          <span class="muted small">${insts.length}종목</span></button></td>
         <td></td><td></td><td></td>
         <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v)}</td><td class="num">${UI.ret(v)}</td>
         <td></td><td class="num">${UI.weight(UI.w(G.agg.valK, total))}</td>
