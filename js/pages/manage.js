@@ -2,7 +2,7 @@
 // - 맨 위: 자산군별로 현재 어떤 종목이 매핑되어 있는지 표시
 // - 하위 메뉴: 자산 구성 관리 / 계좌 관리 / 업로드
 (function () {
-  const st = { filterGroup: 'ALL', sortBy: 'default', collapsed: new Set(), brokers: [], types: [] };
+  const st = { groups: [], brokers: [], types: [], sortBy: 'default', collapsed: new Set() };
   const TABS = [['composition', '자산 구성 관리'], ['accounts', '계좌 관리'], ['upload', '업로드']];
   const hashTab = () => (TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : null);
   let tab = hashTab() || 'composition';

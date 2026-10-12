@@ -97,7 +97,9 @@ window.UI = (function () {
     }[groupBy];
     const total = model.total.valK;
     const groupIdx = c => Groups.codes.indexOf(c);
-    const match = x => filterGroup === 'ALL' || (filterGroup === 'UNASSIGNED' ? x.unassigned : (x.group === filterGroup && !x.unassigned) || (filterGroup === 'OTHER_STOCK' && x.unassigned));
+    // 자산군 필터 (여러 개 선택, 비면 전체). 기타종목(OTHER_STOCK) 은 미지정 종목도 포함
+    const fGroups = opts.groups || (filterGroup === 'ALL' ? [] : [filterGroup]);
+    const match = x => !fGroups.length || (x.unassigned ? fGroups.includes('UNASSIGNED') || fGroups.includes('OTHER_STOCK') : fGroups.includes(x.group));
     const sortRows = rows => {
       const list = rows.slice();
       if (sortBy === 'group') list.sort((a, b) => groupIdx(a.group) - groupIdx(b.group) || (a.unassigned - b.unassigned) || b.r.valK - a.r.valK);
@@ -188,31 +190,30 @@ window.UI = (function () {
   const accBroker = a => a.broker || '(증권사 없음)';
   const accType = a => (a.account && a.account.account_type) || '(계좌종류 없음)';
   // 여러 개 고르는 필터 버튼: 누르면 체크박스 목록이 펼쳐짐 (st[key] = 고른 값 배열, 비면 전체)
+  // values: '값' 또는 ['값', '보이는 이름']
   function multiPick(key, label, values, st) {
     const sel = st[key] || [];
-    const txt = !sel.length ? '전체' : sel.length === 1 ? sel[0] : `${sel[0]} 외 ${sel.length - 1}`;
+    const opts = values.map(v => (Array.isArray(v) ? v : [v, v]));
+    const nm = v => (opts.find(o => o[0] === v) || [v, v])[1];
+    const txt = !sel.length ? '전체' : sel.length === 1 ? nm(sel[0]) : `${nm(sel[0])} 외 ${sel.length - 1}`;
     return `<div class="ms" data-ms="${key}">
       <button type="button" class="ms-btn${sel.length ? ' on' : ''}" aria-expanded="${st.openMs === key}">${label}: ${esc(txt)} ▾</button>
       <div class="ms-pop" ${st.openMs === key ? '' : 'hidden'}>
-        ${values.map(v => `<label class="ms-opt"><input type="checkbox" value="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}
+        ${opts.map(([v, l]) => `<label class="ms-opt"><input type="checkbox" value="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
         <div class="ms-ft"><button type="button" class="btn btn-sm" data-ms-all>전체 (선택 해제)</button><button type="button" class="btn btn-sm btn-primary" data-ms-close>닫기</button></div>
       </div></div>`;
   }
 
   // ---- 계좌 트리 + 필터·정렬·접기 (계좌 현황 / 계좌 관리 공용) ----
-  // st = { filterGroup, sortBy, collapsed:Set } 화면별 상태 객체
+  // st = { groups:[], brokers:[], types:[], sortBy, collapsed:Set } 화면별 상태 객체
   function treeSection(model, mode, st, opts = {}) {
-    const { filterGroup, sortBy } = st;
+    const { sortBy } = st;
+    const groups = st.groups || [];
     return `
       <div class="sec-hd">
         <div class="toolbar">
           ${opts.accountFilter ? multiPick('brokers', '증권사', [...new Set(model.accounts.map(accBroker))], st) + multiPick('types', '계좌 종류', [...new Set(model.accounts.map(accType))], st) : ''}
-          <label class="small muted" for="f-group">자산군 필터</label>
-          <select id="f-group" class="inline">
-            <option value="ALL">전체</option>
-            ${Groups.list.map(g => `<option value="${g.code}" ${filterGroup === g.code ? 'selected' : ''}>${g.name}${g.code === 'OTHER_STOCK' ? ' (미지정 포함)' : ''}</option>`).join('')}
-            <option value="UNASSIGNED" ${filterGroup === 'UNASSIGNED' ? 'selected' : ''}>미지정만</option>
-          </select>
+          ${multiPick('groups', '자산군', [...Groups.list.map(g => [g.code, g.name + (g.code === 'OTHER_STOCK' ? ' (미지정 포함)' : '')]), ['UNASSIGNED', '미지정만']], st)}
           <label class="small muted" for="f-sort">정렬</label>
           <select id="f-sort" class="inline">
             <option value="default" ${sortBy === 'default' ? 'selected' : ''}>등록순</option>
@@ -228,11 +229,11 @@ window.UI = (function () {
         </div>
         <div class="toolbar"><button type="button" class="btn btn-sm" id="exp-all">모두 펼치기</button><button type="button" class="btn btn-sm" id="col-all">모두 접기</button></div>
       </div>
-      ${filterGroup !== 'ALL' ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
-      ${holdingsTree(model, mode, { ...opts, filterGroup, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}), ...(opts.accountFilter ? { brokers: st.brokers, types: st.types } : {}) })}`;
+      ${groups.length ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
+      ${holdingsTree(model, mode, { ...opts, groups, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}), ...(opts.accountFilter ? { brokers: st.brokers, types: st.types } : {}) })}`;
   }
   function bindTree(root, model, st) {
-    // 증권사 · 계좌 종류 필터: 체크할 때마다 바로 반영하고, 목록은 열린 채로 둠 (바깥을 누르거나 [닫기]로 닫힘)
+    // 증권사 · 계좌 종류 · 자산군 필터: 체크할 때마다 바로 반영하고, 목록은 열린 채로 둠 (바깥을 누르거나 [닫기]로 닫힘)
     root.querySelectorAll('[data-ms]').forEach(box => {
       const key = box.dataset.ms;
       box.querySelector('.ms-btn').onclick = () => { st.openMs = st.openMs === key ? null : key; App.rerender(); };
@@ -249,7 +250,6 @@ window.UI = (function () {
     }
     const gb = root.querySelector('#f-groupby');
     if (gb) gb.onchange = e => { st.groupBy = e.target.value; if (st.onGroupBy) st.onGroupBy(st.groupBy); App.rerender(); };
-    root.querySelector('#f-group').onchange = e => { st.filterGroup = e.target.value; App.rerender(); };
     root.querySelector('#f-sort').onchange = e => { st.sortBy = e.target.value; App.rerender(); };
     root.querySelector('#exp-all').onclick = () => { st.collapsed.clear(); App.rerender(); };
     root.querySelector('#col-all').onclick = () => { model.accounts.forEach(a => st.collapsed.add(a.key)); App.rerender(); };

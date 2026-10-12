@@ -6,7 +6,7 @@
   let savedGB = null;
   try { savedGB = localStorage.getItem(GB_KEY); } catch (e) { /* 저장소 사용 불가 */ }
   const st = {
-    filterGroup: 'ALL', sortBy: 'default', collapsed: new Set(),
+    groups: [], brokers: [], types: [], sortBy: 'default', collapsed: new Set(),
     groupBy: ['broker', 'type', 'name'].includes(savedGB) ? savedGB : 'broker',
     onGroupBy: v => { try { localStorage.setItem(GB_KEY, v); } catch (e) { /* 무시 */ } }
   };
@@ -26,7 +26,7 @@
       ${App.statusBar(status)}
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
       <div class="sec">
-        ${UI.treeSection(model, mode, st, { editable: false, showUpdated: true, groupSelect: true })}
+        ${UI.treeSection(model, mode, st, { editable: false, showUpdated: true, groupSelect: true, accountFilter: true })}
         <p class="small muted">자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.
           회색 <span class="gbadge unassigned">기타종목<small>미지정</small></span>은 자산군 미지정 종목입니다.</p>
       </div>`;
