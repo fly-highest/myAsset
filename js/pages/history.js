@@ -29,7 +29,14 @@
     const last = snaps[snaps.length - 1];
 
     // 날짜별 자산 현황 표 (최근 날짜가 위) — 자산 현황 화면과 같은 양식 (UI.statusTable)
-    const table = UI.statusTable(snaps.map((s, i) => ({ label: s.snapshot_date, sub: s.snapshot_time, tag: s.initial ? '최초 데이터' : s.simulated ? '시뮬레이션' : '', model: models[i] })).reverse(), mode, { empty: '스냅샷이 없습니다' });
+    const entries = snaps.map((s, i) => ({ label: s.snapshot_date, sub: s.snapshot_time, tag: s.initial ? '최초 데이터' : s.simulated ? '시뮬레이션' : '', model: models[i] })).reverse();
+    // 맨 위에 '현재' 줄: 지금 보유 × 최근 시세(↻ 시세 갱신 · 매시 자동 갱신 값). 보는 기간이 오늘까지일 때만
+    if (toVal >= today) {
+      const [{ model: now }, ps] = await Promise.all([App.loadCurrentModel(), DataService.getPriceStatus()]);
+      const asOf = ps.latestAsOf ? Fmt.mdhm(ps.latestAsOf) : '';
+      entries.unshift({ label: today, sub: asOf ? '시세 ' + asOf : '', tag: '현재 · 저장 전', model: now });
+    }
+    const table = UI.statusTable(entries, mode, { empty: '스냅샷이 없습니다' });
 
     document.getElementById('main').innerHTML = `
       <div class="page-hd">
