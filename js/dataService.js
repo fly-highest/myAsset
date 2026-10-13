@@ -975,7 +975,8 @@ window.DataService = (function () {
     baseCache = null; snapCache = null;
     return createDailySnapshot(state.meta.baseDate || Fmt.todayKST(), { real: true, initial: true }); // 날짜 = 현황 기준일 (업로드 파일의 기준일자)
   }
-  // 매일 08:00 스냅샷 (실제 이력 모드): 화면을 열었을 때 마지막 08:00 스냅샷이 없으면 지금 현황으로 저장
+  // 매일 08:00 스냅샷 (실제 이력 모드): 서버 예약 작업(daily-snapshot, 매일 08:05 KST)이 저장. 화면을 열었을 때도
+  // 마지막 08:00 스냅샷이 없으면(서버가 실패했거나 08:00~08:05 사이) 지금 현황으로 저장
   // (지나간 날짜는 그때의 보유를 알 수 없어 만들지 않음)
   // 로그인 후 화면을 열 때: 실제 데이터인데 아직 예시 이력을 쓰고 있으면 이력 초기화(최초 데이터 저장), 아니면 08:00 스냅샷 확인
   async function ensureHistory() {
