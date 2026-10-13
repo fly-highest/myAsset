@@ -195,12 +195,13 @@ window.UI = (function () {
     const sel = st[key] || [];
     const opts = values.map(v => (Array.isArray(v) ? v : [v, v]));
     const nm = v => (opts.find(o => o[0] === v) || [v, v])[1];
-    const txt = !sel.length ? '전체' : sel.length === 1 ? nm(sel[0]) : `${nm(sel[0])} 외 ${sel.length - 1}`;
+    const allOn = opts.length > 0 && opts.every(([v]) => sel.includes(v)); // 목록을 모두 체크한 상태
+    const txt = !sel.length ? '전체' : allOn ? '모두 선택' : sel.length === 1 ? nm(sel[0]) : `${nm(sel[0])} 외 ${sel.length - 1}`;
     return `<div class="ms" data-ms="${key}">
       <button type="button" class="ms-btn${sel.length ? ' on' : ''}" aria-expanded="${st.openMs === key}">${label}: ${esc(txt)} ▾</button>
       <div class="ms-pop" ${st.openMs === key ? '' : 'hidden'}>
         ${opts.map(([v, l]) => `<label class="ms-opt"><input type="checkbox" value="${esc(v)}" ${sel.includes(v) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
-        <div class="ms-ft"><button type="button" class="btn btn-sm" data-ms-all>전체 (선택 해제)</button><button type="button" class="btn btn-sm btn-primary" data-ms-close>닫기</button></div>
+        <div class="ms-ft"><button type="button" class="btn btn-sm" data-ms-all title="누를 때마다 전체 선택 ↔ 전체 해제">${allOn ? '전체 해제' : '전체 선택'}</button><button type="button" class="btn btn-sm btn-primary" data-ms-close>닫기</button></div>
       </div></div>`;
   }
 
@@ -245,7 +246,7 @@ window.UI = (function () {
         </div>
         <div class="toolbar"><button type="button" class="btn btn-sm" id="exp-all">모두 펼치기</button><button type="button" class="btn btn-sm" id="col-all">모두 접기</button></div>
       </div>
-      ${groups.length ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
+      ${groups.length && groups.length < Groups.codes.length + 1 ? '<div class="notice info">자산군 필터 적용 중입니다. 계좌 소계는 계좌 전체 기준입니다.</div>' : ''}
       ${holdingsTree(model, mode, { ...opts, groups, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}), ...(opts.accountFilter ? { brokers: st.brokers, types: st.types } : {}) })}`;
   }
   function bindTree(root, model, st) {
@@ -256,7 +257,11 @@ window.UI = (function () {
       box.querySelectorAll('.ms-opt input').forEach(cb => cb.onchange = () => {
         st[key] = [...box.querySelectorAll('.ms-opt input:checked')].map(x => x.value); st.openMs = key; saveFilters(st); App.rerender();
       });
-      box.querySelector('[data-ms-all]').onclick = () => { st[key] = []; st.openMs = key; saveFilters(st); App.rerender(); };
+      // [전체 선택] ↔ [전체 해제]: 다 체크돼 있으면 모두 해제, 아니면 모두 체크
+      box.querySelector('[data-ms-all]').onclick = () => {
+        const all = [...box.querySelectorAll('.ms-opt input')];
+        st[key] = all.every(x => x.checked) ? [] : all.map(x => x.value); st.openMs = key; saveFilters(st); App.rerender();
+      };
       box.querySelector('[data-ms-close]').onclick = () => { st.openMs = null; App.rerender(); };
     });
     if (st.openMs && !st._msOutside) {
