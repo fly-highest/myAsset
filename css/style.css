@@ -365,6 +365,7 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 @keyframes ma-below-blink { 0% { border-color: #dc2626; box-shadow: 0 0 0 2px #dc2626; } 50% { border-color: var(--line); box-shadow: var(--shadow); } }
 @media (prefers-reduced-motion: reduce) { .mkt-card.ma-below { animation: none; border-color: #dc2626; box-shadow: 0 0 0 2px #dc2626; } }
 .fx-stats.four { grid-template-columns: repeat(4, 1fr); } @media (max-width: 900px) { .fx-stats.four { grid-template-columns: repeat(2, 1fr); } }
+.fx-stats.five { grid-template-columns: repeat(5, 1fr); } @media (max-width: 1100px) { .fx-stats.five { grid-template-columns: repeat(3, 1fr); } } @media (max-width: 700px) { .fx-stats.five { grid-template-columns: 1fr 1fr; } }
 /* 시장 지표: 이동평균 체크박스 */
 .ma-pick { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
 .ma-pick input { margin: 0; }

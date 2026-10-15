@@ -190,13 +190,14 @@
 
     let stats;
     if (m.sma) {
-      // QQQ · SPY · GLD · 비트코인: 현재 · 50일선 · 200일선 · 현재 − 200일선
-      const { s, hist } = data[0];
+      // QQQ · SPY · GLD · 비트코인: 현재 · 50일선 · 200일선 · 현재 − 200일선 · 현재 − 고른 기간 평균
+      const { s, hist, c } = data[0];
+      const dP = c.avg && hist.length ? pct(hist[hist.length - 1].close, c.avg) : null; // 고른 기간(1주~최대)의 평균과 현재의 차이
       const L = hist.length - 1, last = hist[L];
       const ma50 = smaN(hist, 50)[L], ma200 = smaN(hist, 200)[L];
       const d200 = ma200 ? pct(last.close, ma200) : null;
       const zone = d200 == null ? '' : d200 >= 1 ? '200일선 +1% 이상' : d200 <= -1 ? '200일선 −1% 이하' : '200일선 ±1% 사이';
-      stats = `<div class="fx-stats four">
+      stats = `<div class="fx-stats five">
         <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>현재</div><div class="stat-v">${m.fmt(last.close)}</div>
           <div class="stat-sub">${last.date} 종가 · ${SRC[last.source] || last.source}</div></div>
         <div><div class="stat-t">50일선</div><div class="stat-v">${ma50 ? m.fmt(ma50) : '—'}</div>
@@ -205,6 +206,8 @@
           <div class="stat-sub">${ma200 && m.band ? `+1% ${m.fmt(ma200 * 1.01)} / −1% ${m.fmt(ma200 * 0.99)}` : ''}</div></div>
         <div><div class="stat-t">현재 − 200일선</div><div class="stat-v">${d200 == null ? '—' : `<span class="${Fmt.cls(d200, 'PCT')}">${Fmt.pct(d200)}</span>`}</div>
           <div class="stat-sub">${m.band ? zone : ''}</div></div>
+        <div><div class="stat-t">현재 − ${pName} 평균</div><div class="stat-v">${dP == null ? '—' : `<span class="${Fmt.cls(dP, 'PCT')}">${Fmt.pct(dP)}</span>`}</div>
+          <div class="stat-sub">${c.avg ? `${pName} 평균 ${m.fmt(c.avg)} · ${c.rows.length}${m.everyDay ? '일' : '거래일'}` : '데이터 없음'}</div></div>
       </div>`;
     } else {
       // 환율 · 달러 인덱스 · 유가: 현재 · 기간 평균 · 현재 − 기간 평균 (지표마다 한 줄)
