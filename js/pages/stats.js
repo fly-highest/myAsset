@@ -66,7 +66,7 @@
             <select id="s-sort" class="inline">${SORTS.map(([k, l]) => `<option value="${k}" ${k === sortBy ? 'selected' : ''}>${l}</option>`).join('')}</select>
           </div>
         </div>
-        <div class="tbl-wrap tree-wrap"><table class="tbl tree stats-tbl">
+        <div class="tbl-wrap stats-wrap"><table class="tbl tree stats-tbl">
           <thead><tr>
             <th class="chk-col"><input type="checkbox" id="chk-all" ${on.length === rows.length ? 'checked' : ''} title="모두 체크 / 모두 해제" aria-label="모두 체크"></th><th>증권사</th><th>계좌 종류</th><th>계좌</th><th>종목명</th><th>심볼</th><th>자산군</th>
             <th class="num">수량</th><th class="num">평균매입가</th><th class="num">매입환율</th><th class="num">현재가</th>
@@ -83,6 +83,10 @@
         <p class="small muted">합계 행의 비중 = 전체 자산 대비, 종목 행의 비중 = 체크한 종목 합계 대비. 맨 왼쪽 체크를 끈 행은 합계에서 빠집니다 (화면을 새로 열면 다시 모두 체크). 자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.</p>
       </div>`;
     UI.bindFilters(main, st);
+    // 표 안 스크롤 없이 페이지와 함께 스크롤: 머리글 · 합계 행은 맨 위 메뉴 줄 바로 아래에 붙음
+    const hdr = document.getElementById('app-header'), thead = main.querySelector('.stats-tbl thead');
+    main.style.setProperty('--hdr-h', (hdr ? hdr.offsetHeight : 0) + 'px');
+    main.style.setProperty('--th-h', (thead ? thead.offsetHeight : 0) + 'px');
     // 행 체크박스 → 체크된 행만 맨 위 합계에 더함
     main.querySelectorAll('[data-row]').forEach(cb => cb.onchange = () => { cb.checked ? unchecked.delete(cb.dataset.row) : unchecked.add(cb.dataset.row); App.rerender(); });
     main.querySelector('#chk-all').indeterminate = on.length > 0 && on.length < rows.length; // 일부만 체크 = 반쯤 표시
