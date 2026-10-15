@@ -173,7 +173,10 @@ window.UI = (function () {
     // 계좌 필터 중이면 합계도 보이는 계좌만 더함
     const totAgg = accFiltered ? accounts.reduce((g, a) => { a.rows.forEach(x => Calc.add(g, x.r)); return g; }, Calc.emptyAgg()) : model.total;
     const tv = Calc.view(totAgg, mode, model.fx);
-    return `<div class="tbl-wrap tree-wrap${opts.tall ? ' tall' : ''}"><table class="tbl tree">
+    // pageScroll: 표 안 스크롤 없이 페이지와 함께 스크롤 + 합계 행을 맨 위(머리글 바로 아래)에 고정 (계좌 현황)
+    const totalCells = `<td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv, { split: true })}</td><td class="num">${weight(w(totAgg.valK, total), false)}</td>${editable ? '<td></td>' : ''}`;
+    const totalLabel = accFiltered ? '선택 계좌 합계' : '전체 합계';
+    return `<div class="tbl-wrap ${opts.pageScroll ? 'page-wrap' : 'tree-wrap'}${opts.tall ? ' tall' : ''}"><table class="tbl tree">
       <thead><tr>
         <th>종목명</th><th>심볼</th>
         <th><button type="button" class="th-sort" data-sort-group title="자산군 순으로 정렬">자산군${sortMark}</button></th>
@@ -182,8 +185,8 @@ window.UI = (function () {
         <th class="num" title="계좌 행: 전체 대비 / 종목 행: 계좌 내">비중</th>
         ${editable ? '<th>관리</th>' : ''}
       </tr></thead>
-      <tbody>${body}</tbody>
-      <tfoot><tr><td colspan="7">${accFiltered ? '선택 계좌 합계' : '전체 합계'}</td><td class="num">${amt(tv, 'val')}</td><td class="num">${amt(tv, 'inv')}</td><td class="num">${prof(tv)}</td><td class="num">${ret(tv, { split: true })}</td><td class="num">${weight(w(totAgg.valK, total), false)}</td>${editable ? '<td></td>' : ''}</tr></tfoot>
+      <tbody>${opts.pageScroll ? `<tr class="sum-row"><td colspan="7"><b>${totalLabel}</b></td>${totalCells}</tr>` : ''}${body}</tbody>
+      ${opts.pageScroll ? '' : `<tfoot><tr><td colspan="7">${totalLabel}</td>${totalCells}</tr></tfoot>`}
     </table></div>`;
   }
 
@@ -247,6 +250,13 @@ window.UI = (function () {
   }
   function bindTree(root, model, st) {
     bindFilters(root, st);
+    // 페이지와 함께 스크롤하는 표(page-wrap): 머리글 · 합계 행이 맨 위 메뉴 줄 바로 아래에 붙도록 높이 알려 줌
+    const pw = root.querySelector('.page-wrap');
+    if (pw) {
+      const hdr = document.getElementById('app-header'), th = pw.querySelector('thead');
+      pw.style.setProperty('--hdr-h', (hdr ? hdr.offsetHeight : 0) + 'px');
+      pw.style.setProperty('--th-h', (th ? th.offsetHeight : 0) + 'px');
+    }
     const gb = root.querySelector('#f-groupby');
     if (gb) gb.onchange = e => { st.groupBy = e.target.value; if (st.onGroupBy) st.onGroupBy(st.groupBy); App.rerender(); };
     root.querySelector('#f-sort').onchange = e => { st.sortBy = e.target.value; App.rerender(); };

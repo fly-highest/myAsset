@@ -402,3 +402,7 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .stats-tbl .chk-col { width: 32px; text-align: center; padding-left: 6px; padding-right: 0; }
 .stats-tbl tr.row-off td:not(.chk-col) { opacity: .42; }
 .stats-tbl .nm-clip { max-width: 120px; } /* 통계분석: 종목명 칸을 좁혀 표가 화면 폭 안에 들어가게 (전체 이름은 마우스를 올리면) */
+/* 계좌 현황: 표 안 스크롤 없이 페이지와 함께 스크롤. 머리글 · 합계 행(맨 위)은 메뉴 줄 바로 아래에 고정 */
+.page-wrap { overflow: visible; }
+.page-wrap thead th { top: var(--hdr-h, 0px); }
+.page-wrap .sum-row td { position: sticky; top: calc(var(--hdr-h, 0px) + var(--th-h, 37px)); z-index: 2; background: #f8f9fb; font-weight: 700; border-bottom: 2px solid #c9d6f0; }
