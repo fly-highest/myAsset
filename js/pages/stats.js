@@ -7,6 +7,9 @@
   let sortBy = 'default';
   try { const s = localStorage.getItem(SORT_KEY); if (SORTS.some(x => x[0] === s)) sortBy = s; } catch (e) { /* 무시 */ }
   const st = { filterKey: FILTER_KEY, ...UI.loadFilters(FILTER_KEY) }; // 필터 선택은 이 브라우저에 기억
+  // 행 체크박스: 기본은 모두 체크, 체크를 끈 행만 기억 (체크된 행만 맨 위 합계에 더함). 화면을 새로 열면 다시 모두 체크
+  const unchecked = new Set();
+  const rowKey = x => (x.holding ? x.holding.id : x.accKey + '|' + x.inst.id);
 
   async function render() {
     const { model, status } = await App.loadCurrentModel();
@@ -24,13 +27,16 @@
     else if (sortBy === 'ret' || sortBy === 'retAsc') rows.sort((p, q) => (sortBy === 'ret' ? 1 : -1) * (q.x.r.retK - p.x.r.retK));
     else if (sortBy === 'group') rows.sort((p, q) => gIdx(p.x.group) - gIdx(q.x.group) || (p.x.unassigned - q.x.unassigned) || q.x.r.valK - p.x.r.valK);
 
-    const sum = rows.reduce((g, { x }) => Calc.add(g, x.r), Calc.emptyAgg());
+    const on = rows.filter(({ x }) => !unchecked.has(rowKey(x)));
+    const sum = on.reduce((g, { x }) => Calc.add(g, x.r), Calc.emptyAgg());
     const sv = Calc.view(sum, mode, model.fx);
     const filtered = st.brokers.length || st.types.length || st.groups.length;
     const body = rows.map(({ a, x }) => {
       const i = x.inst, isCash = i.asset_type === 'CASH', isUSD = i.currency === 'USD';
       const v = Calc.view(Calc.add(Calc.emptyAgg(), x.r), mode, model.fx);
-      return `<tr>
+      const k = rowKey(x), chk = !unchecked.has(k);
+      return `<tr class="${chk ? '' : 'row-off'}">
+        <td class="chk-col"><input type="checkbox" data-row="${esc(k)}" ${chk ? 'checked' : ''} aria-label="합계에 넣기"></td>
         <td class="nowrap">${esc(UI.accBroker(a))}</td>
         <td class="nowrap">${esc(UI.accType(a))}</td>
         <td class="nowrap">${esc(a.name)}</td>
@@ -42,7 +48,7 @@
         <td class="num">${isUSD ? Fmt.fx(x.r.fxBuy) : '<span class="muted">—</span>'}</td>
         <td class="num">${UI.priceCell(x.r.cp, i, x.priceMeta, x.noPrice)}</td>
         <td class="num">${UI.amt(v, 'val')}</td><td class="num">${UI.amt(v, 'inv')}</td><td class="num">${UI.prof(v)}</td><td class="num">${UI.ret(v, { split: true })}</td>
-        <td class="num" title="고른 대상 합계 대비 비중">${UI.weight(UI.w(x.r.valK, sum.valK), false)}</td>
+        <td class="num" title="체크한 종목 합계 대비 비중">${chk ? UI.weight(UI.w(x.r.valK, sum.valK), false) : '<span class="muted">—</span>'}</td>
       </tr>`;
     }).join('');
 
@@ -62,21 +68,25 @@
         </div>
         <div class="tbl-wrap tree-wrap"><table class="tbl tree stats-tbl">
           <thead><tr>
-            <th>증권사</th><th>계좌 종류</th><th>계좌</th><th>종목명</th><th>심볼</th><th>자산군</th>
+            <th class="chk-col"><input type="checkbox" id="chk-all" ${on.length === rows.length ? 'checked' : ''} title="모두 체크 / 모두 해제" aria-label="모두 체크"></th><th>증권사</th><th>계좌 종류</th><th>계좌</th><th>종목명</th><th>심볼</th><th>자산군</th>
             <th class="num">수량</th><th class="num">평균매입가</th><th class="num">매입환율</th><th class="num">현재가</th>
             <th class="num">평가금액</th><th class="num">투자금액</th><th class="num">손익</th><th class="num">수익률</th>
-            <th class="num" title="종목 행: 고른 대상 합계 대비 / 합계 행: 전체 대비">비중</th>
+            <th class="num" title="종목 행: 체크한 종목 합계 대비 / 합계 행: 전체 대비">비중</th>
           </tr></thead>
           <tbody>
-            <tr class="broker-row sum-row"><td colspan="10"><b>${filtered ? '선택 대상 합계' : '전체 합계'}</b> <span class="muted">· ${rows.length}개 종목 행 · ${new Set(rows.map(r => r.a.key)).size}개 계좌</span></td>
+            <tr class="broker-row sum-row"><td colspan="11"><b>${on.length < rows.length ? '체크한 종목 합계' : filtered ? '선택 대상 합계' : '전체 합계'}</b> <span class="muted">· ${on.length}/${rows.length}개 종목 행 · ${new Set(on.map(r => r.a.key)).size}개 계좌</span></td>
               <td class="num">${UI.amt(sv, 'val')}</td><td class="num">${UI.amt(sv, 'inv')}</td><td class="num">${UI.prof(sv)}</td><td class="num">${UI.ret(sv, { split: true })}</td>
               <td class="num" title="전체 대비 비중">${UI.weight(UI.w(sum.valK, model.total.valK), false)}</td></tr>
-            ${body || '<tr><td colspan="15" class="muted center">고른 조건에 맞는 종목이 없습니다.</td></tr>'}
+            ${body || '<tr><td colspan="16" class="muted center">고른 조건에 맞는 종목이 없습니다.</td></tr>'}
           </tbody>
         </table></div>
-        <p class="small muted">합계 행의 비중 = 전체 자산 대비, 종목 행의 비중 = 고른 대상 합계 대비. 자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.</p>
+        <p class="small muted">합계 행의 비중 = 전체 자산 대비, 종목 행의 비중 = 체크한 종목 합계 대비. 맨 왼쪽 체크를 끈 행은 합계에서 빠집니다 (화면을 새로 열면 다시 모두 체크). 자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.</p>
       </div>`;
     UI.bindFilters(main, st);
+    // 행 체크박스 → 체크된 행만 맨 위 합계에 더함
+    main.querySelectorAll('[data-row]').forEach(cb => cb.onchange = () => { cb.checked ? unchecked.delete(cb.dataset.row) : unchecked.add(cb.dataset.row); App.rerender(); });
+    main.querySelector('#chk-all').indeterminate = on.length > 0 && on.length < rows.length; // 일부만 체크 = 반쯤 표시
+    main.querySelector('#chk-all').onchange = e => { rows.forEach(({ x }) => (e.target.checked ? unchecked.delete(rowKey(x)) : unchecked.add(rowKey(x)))); App.rerender(); };
     main.querySelector('#s-sort').onchange = e => {
       sortBy = e.target.value;
       try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) { /* 무시 */ }
