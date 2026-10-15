@@ -188,42 +188,30 @@
     const sel = maSelected(m);
     const pct = (a, b) => (a / b - 1) * 100;
 
-    let stats;
-    if (m.sma) {
-      // QQQ · SPY · GLD · 비트코인: 현재 · 50일선 · 200일선 · 현재 − 200일선 · 현재 − 고른 기간 평균
-      const { s, hist, c } = data[0];
-      const dP = c.avg && hist.length ? pct(hist[hist.length - 1].close, c.avg) : null; // 고른 기간(1주~최대)의 평균과 현재의 차이
-      const L = hist.length - 1, last = hist[L];
-      const ma50 = smaN(hist, 50)[L], ma200 = smaN(hist, 200)[L];
-      const d200 = ma200 ? pct(last.close, ma200) : null;
-      const zone = d200 == null ? '' : d200 >= 1 ? '200일선 +1% 이상' : d200 <= -1 ? '200일선 −1% 이하' : '200일선 ±1% 사이';
-      stats = `<div class="fx-stats five">
-        <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>현재</div><div class="stat-v">${m.fmt(last.close)}</div>
-          <div class="stat-sub">${last.date} 종가 · ${SRC[last.source] || last.source}</div></div>
-        <div><div class="stat-t">50일선</div><div class="stat-v">${ma50 ? m.fmt(ma50) : '—'}</div>
-          <div class="stat-sub">${ma50 ? `현재 − 50일선 <span class="${Fmt.cls(pct(last.close, ma50), 'PCT')}">${Fmt.pct(pct(last.close, ma50))}</span>` : ''}</div></div>
-        <div><div class="stat-t">200일선</div><div class="stat-v">${ma200 ? m.fmt(ma200) : '—'}</div>
-          <div class="stat-sub">${ma200 && m.band ? `+1% ${m.fmt(ma200 * 1.01)} / −1% ${m.fmt(ma200 * 0.99)}` : ''}</div></div>
-        <div><div class="stat-t">현재 − 200일선</div><div class="stat-v">${d200 == null ? '—' : `<span class="${Fmt.cls(d200, 'PCT')}">${Fmt.pct(d200)}</span>`}</div>
-          <div class="stat-sub">${m.band ? zone : ''}</div></div>
-        <div><div class="stat-t">현재 − ${pName} 평균</div><div class="stat-v">${dP == null ? '—' : `<span class="${Fmt.cls(dP, 'PCT')}">${Fmt.pct(dP)}</span>`}</div>
-          <div class="stat-sub">${c.avg ? `${pName} 평균 ${m.fmt(c.avg)} · ${c.rows.length}${m.everyDay ? '일' : '거래일'}` : '데이터 없음'}</div></div>
+    // 위쪽 칸 (모든 지표 같은 4칸, 선이 여럿이면 선마다 한 줄):
+    //   현재 · 전일(전월·전분기) 대비 등락 · 고른 기간 평균(= 그 기간 이동평균) · 현재 − 기간 평균
+    // diffAbs(금리·스프레드·김치 프리미엄 등 % 단위 지표): 등락과 차이를 %가 아니라 %p 로
+    const unitStep = m.quarterly ? '전분기' : m.monthly ? '전월' : '전일';
+    const signed = v => (v > 0 ? '+' : v < 0 ? '−' : '');
+    const pp = v => ppFmt(v).replace('%', '%p');
+    const stats = data.map(({ s, hist, c, cur }) => {
+      const name = m.series.length > 1 ? `${s.label} ` : '';
+      // 비교할 직전 값: 실시간 값(환율)은 오늘 날짜가 아닌 마지막 종가, 그 밖은 마지막 바로 앞 자료
+      const today = Fmt.todayKST();
+      const prevRow = s.live ? [...hist].reverse().find(r => r.date < today) : hist[hist.length - 2];
+      const chg = cur && prevRow ? (m.diffAbs ? cur.v - prevRow.close : pct(cur.v, prevRow.close)) : null;
+      const diff = c.avg && cur ? (m.diffAbs ? cur.v - c.avg : pct(cur.v, c.avg)) : null;
+      return `<div class="fx-stats four">
+        <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}${cur && m.grade ? ` <span class="grade">${m.grade(cur.v)}</span>` : ''}</div>
+          <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div>${m.gradeNote ? `<div class="stat-sub">${m.gradeNote}</div>` : ''}</div>
+        <div><div class="stat-t">${name}${unitStep} 대비</div><div class="stat-v">${chg == null ? '—' : `<span class="${Fmt.cls(chg, 'PCT')}">${m.diffAbs ? pp(chg) : Fmt.pct(chg)}</span>`}</div>
+          <div class="stat-sub">${chg == null ? '' : `${m.diffAbs ? '' : `${signed(cur.v - prevRow.close)}${m.fmt(Math.abs(cur.v - prevRow.close))} · `}${prevRow.date} ${m.fmt(prevRow.close)}에서`}</div></div>
+        <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
+          <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.quarterly ? '개 분기' : m.monthly ? '개월' : m.everyDay ? '일' : '거래일'} 평균` : '데이터 없음'}</div></div>
+        <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diff == null ? '—' : `<span class="${Fmt.cls(diff, 'PCT')}">${m.diffAbs ? pp(diff) : Fmt.pct(diff)}</span>`}</div>
+          <div class="stat-sub">${diff == null || m.diffAbs ? '' : `${signed(cur.v - c.avg)}${m.fmt(Math.abs(cur.v - c.avg))}`}</div></div>
       </div>`;
-    } else {
-      // 환율 · 달러 인덱스 · 유가: 현재 · 기간 평균 · 현재 − 기간 평균 (지표마다 한 줄)
-      stats = data.map(({ s, c, cur }) => {
-        const diffPct = c.avg && cur ? (m.diffAbs ? cur.v - c.avg : pct(cur.v, c.avg)) : null; // diffAbs: 차이(단위 그대로)
-        const name = m.series.length > 1 ? `${s.label} ` : '';
-        return `<div class="fx-stats">
-          <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}${cur && m.grade ? ` <span class="grade">${m.grade(cur.v)}</span>` : ''}</div>
-            <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div>${m.gradeNote ? `<div class="stat-sub">${m.gradeNote}</div>` : ''}</div>
-          <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
-            <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.quarterly ? '개 분기' : m.monthly ? '개월' : '거래일'} 평균` : '데이터 없음'}</div></div>
-          <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diffPct == null ? '—' : `<span class="${Fmt.cls(diffPct, 'PCT')}">${m.diffAbs ? ppFmt(diffPct).replace('%', '%p') : Fmt.pct(diffPct)}</span>`}</div>
-            <div class="stat-sub">${c.avg && cur ? `${cur.v >= c.avg ? '+' : '−'}${m.diffAbs ? dec2(Math.abs(cur.v - c.avg)) + '%p' : m.fmt(Math.abs(cur.v - c.avg))}` : ''}</div></div>
-        </div>`;
-      }).join('');
-    }
+    }).join('');
 
     const unit = m.everyDay ? '날짜(주말 포함)' : '거래일';
     const firstDate = data.map(d => d.hist[0] && d.hist[0].date).filter(Boolean).sort()[0] || m.since; // 실제로 저장된 가장 오래된 날짜
