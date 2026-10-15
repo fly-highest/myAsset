@@ -204,8 +204,8 @@
       return `<div class="fx-stats four">
         <div><div class="stat-t"><span class="dot" style="background:${s.color}"></span>${name}현재</div><div class="stat-v">${cur ? m.fmt(cur.v) : '—'}${cur && m.grade ? ` <span class="grade">${m.grade(cur.v)}</span>` : ''}</div>
           <div class="stat-sub">${cur ? cur.note : '데이터 없음'}</div>${m.gradeNote ? `<div class="stat-sub">${m.gradeNote}</div>` : ''}</div>
-        <div><div class="stat-t">${name}${unitStep} 대비</div><div class="stat-v">${chg == null ? '—' : `<span class="${Fmt.cls(chg, 'PCT')}">${m.diffAbs ? pp(chg) : Fmt.pct(chg)}</span>`}</div>
-          <div class="stat-sub">${chg == null ? '' : `${m.diffAbs ? '' : `${signed(cur.v - prevRow.close)}${m.fmt(Math.abs(cur.v - prevRow.close))} · `}${prevRow.date} ${m.fmt(prevRow.close)}에서`}</div></div>
+        <div><div class="stat-t">${name}${unitStep} 대비</div><div class="stat-v">${chg == null ? '—' : `<span class="${Fmt.cls(chg, 'PCT')}">${m.diffAbs ? pp(chg) : `${Fmt.pct(chg)} <span class="chg-abs">(${signed(cur.v - prevRow.close)}${m.fmt(Math.abs(cur.v - prevRow.close))})</span>`}</span>`}</div>
+          <div class="stat-sub">${chg == null ? '' : `${prevRow.date} ${m.fmt(prevRow.close)}에서`}</div></div>
         <div><div class="stat-t">${name}${pName} 평균</div><div class="stat-v">${c.avg ? m.fmt(c.avg) : '—'}</div>
           <div class="stat-sub">${c.rows.length ? `${c.rows[0].date} ~ ${c.rows[c.rows.length - 1].date} · ${c.rows.length}${m.quarterly ? '개 분기' : m.monthly ? '개월' : m.everyDay ? '일' : '거래일'} 평균` : '데이터 없음'}</div></div>
         <div><div class="stat-t">${name}현재 − ${pName} 평균</div><div class="stat-v">${diff == null ? '—' : `<span class="${Fmt.cls(diff, 'PCT')}">${m.diffAbs ? pp(diff) : Fmt.pct(diff)}</span>`}</div>
