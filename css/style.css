@@ -394,3 +394,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .acc-name { border: 0; background: none; padding: 6px 10px 6px 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .acc-name:hover b { color: var(--primary); text-decoration: underline; }
 .fx-stats .chg-abs { font-size: 0.8em; } /* 시장 지표: 전일 대비 등락 값 (예: −$14.62) */
+.stats-tbl .sum-row td { position: sticky; top: 37px; z-index: 1; font-weight: 600; } /* 통계분석: 합계 행을 머리글 바로 아래에 고정 */

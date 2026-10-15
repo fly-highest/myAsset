@@ -10,6 +10,7 @@ window.App = (function () {
     { key: 'dashboard', href: 'index.html', label: 'Dashboard' },
     { key: 'groups', href: 'groups.html', label: '자산 현황' },
     { key: 'accounts', href: 'accounts.html', label: '계좌 현황' },
+    { key: 'stats', href: 'stats.html', label: '통계분석' },
     { key: 'history', href: 'history.html', label: '이력' },
     { key: 'invest', href: 'invest.html', label: '투자' },
     { key: 'market', href: 'market.html', label: '시장 지표' },

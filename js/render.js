@@ -99,7 +99,7 @@ window.UI = (function () {
     const groupIdx = c => Groups.codes.indexOf(c);
     // 자산군 필터 (여러 개 선택, 비면 전체). 기타종목(OTHER_STOCK) 은 미지정 종목도 포함
     const fGroups = opts.groups || (filterGroup === 'ALL' ? [] : [filterGroup]);
-    const match = x => !fGroups.length || (x.unassigned ? fGroups.includes('UNASSIGNED') || fGroups.includes('OTHER_STOCK') : fGroups.includes(x.group));
+    const match = x => groupMatch(x, fGroups);
     const sortRows = rows => {
       const list = rows.slice();
       if (sortBy === 'group') list.sort((a, b) => groupIdx(a.group) - groupIdx(b.group) || (a.unassigned - b.unassigned) || b.r.valK - a.r.valK);
@@ -222,15 +222,11 @@ window.UI = (function () {
   // st = { groups:[], brokers:[], types:[], sortBy, collapsed:Set } 화면별 상태 객체
   function treeSection(model, mode, st, opts = {}) {
     const { sortBy } = st;
-    // 기억해 둔 선택 중 지금은 없는 값(삭제된 증권사 · 자산군 등)은 버림
-    const keep = (k, list) => { if (st[k]) st[k] = st[k].filter(v => list.includes(v)); };
-    keep('brokers', model.accounts.map(accBroker)); keep('types', model.accounts.map(accType)); keep('groups', [...Groups.codes, 'UNASSIGNED']);
     const groups = st.groups || [];
     return `
       <div class="sec-hd">
         <div class="toolbar">
-          ${opts.accountFilter ? multiPick('brokers', '증권사', [...new Set(model.accounts.map(accBroker))], st) + multiPick('types', '계좌 종류', [...new Set(model.accounts.map(accType))], st) : ''}
-          ${multiPick('groups', '자산군', [...Groups.list.map(g => [g.code, g.name + (g.code === 'OTHER_STOCK' ? ' (미지정 포함)' : '')]), ['UNASSIGNED', '미지정만']], st)}
+          ${filterBar(model, st)}
           <label class="small muted" for="f-sort">정렬</label>
           <select id="f-sort" class="inline">
             <option value="default" ${sortBy === 'default' ? 'selected' : ''}>등록순</option>
@@ -250,6 +246,32 @@ window.UI = (function () {
       ${holdingsTree(model, mode, { ...opts, groups, sortBy, collapsed: st.collapsed, ...(opts.groupSelect ? { groupBy: st.groupBy } : {}), ...(opts.accountFilter ? { brokers: st.brokers, types: st.types } : {}) })}`;
   }
   function bindTree(root, model, st) {
+    bindFilters(root, st);
+    const gb = root.querySelector('#f-groupby');
+    if (gb) gb.onchange = e => { st.groupBy = e.target.value; if (st.onGroupBy) st.onGroupBy(st.groupBy); App.rerender(); };
+    root.querySelector('#f-sort').onchange = e => { st.sortBy = e.target.value; App.rerender(); };
+    root.querySelector('#exp-all').onclick = () => { st.collapsed.clear(); App.rerender(); };
+    root.querySelector('#col-all').onclick = () => { model.accounts.forEach(a => st.collapsed.add(a.key)); App.rerender(); };
+    const sg = root.querySelector('[data-sort-group]');
+    if (sg) sg.onclick = () => { st.sortBy = st.sortBy === 'group' ? 'group-desc' : st.sortBy === 'group-desc' ? 'default' : 'group'; App.rerender(); };
+    root.querySelectorAll('[data-toggle-acc]').forEach(b => b.onclick = () => {
+      const k = b.dataset.toggleAcc; st.collapsed.has(k) ? st.collapsed.delete(k) : st.collapsed.add(k); App.rerender();
+    });
+    fitTree();
+  }
+  // 증권사 · 계좌 종류 · 자산군 필터 버튼 3개 (계좌 현황 · 계좌 관리 · 통계분석 공용). 지금은 없는 값은 선택에서 뺌
+  function filterBar(model, st) {
+    const keep = (k, list) => { if (st[k]) st[k] = st[k].filter(v => list.includes(v)); };
+    keep('brokers', model.accounts.map(accBroker)); keep('types', model.accounts.map(accType)); keep('groups', [...Groups.codes, 'UNASSIGNED']);
+    return multiPick('brokers', '증권사', [...new Set(model.accounts.map(accBroker))], st)
+      + multiPick('types', '계좌 종류', [...new Set(model.accounts.map(accType))], st)
+      + multiPick('groups', '자산군', [...Groups.list.map(g => [g.code, g.name + (g.code === 'OTHER_STOCK' ? ' (미지정 포함)' : '')]), ['UNASSIGNED', '미지정만']], st);
+  }
+  // 자산군 필터에 맞는 종목 행인지 (기타종목은 미지정도 포함)
+  function groupMatch(x, groups) {
+    return !groups || !groups.length || (x.unassigned ? groups.includes('UNASSIGNED') || groups.includes('OTHER_STOCK') : groups.includes(x.group));
+  }
+  function bindFilters(root, st) {
     // 증권사 · 계좌 종류 · 자산군 필터: 체크할 때마다 바로 반영하고, 목록은 열린 채로 둠 (바깥을 누르거나 [닫기]로 닫힘)
     root.querySelectorAll('[data-ms]').forEach(box => {
       const key = box.dataset.ms;
@@ -269,17 +291,6 @@ window.UI = (function () {
       st._msOutside = e => { if (st.openMs && document.contains(e.target) && !e.target.closest('[data-ms]')) { st.openMs = null; App.rerender(); } };
       document.addEventListener('click', st._msOutside);
     }
-    const gb = root.querySelector('#f-groupby');
-    if (gb) gb.onchange = e => { st.groupBy = e.target.value; if (st.onGroupBy) st.onGroupBy(st.groupBy); App.rerender(); };
-    root.querySelector('#f-sort').onchange = e => { st.sortBy = e.target.value; App.rerender(); };
-    root.querySelector('#exp-all').onclick = () => { st.collapsed.clear(); App.rerender(); };
-    root.querySelector('#col-all').onclick = () => { model.accounts.forEach(a => st.collapsed.add(a.key)); App.rerender(); };
-    const sg = root.querySelector('[data-sort-group]');
-    if (sg) sg.onclick = () => { st.sortBy = st.sortBy === 'group' ? 'group-desc' : st.sortBy === 'group-desc' ? 'default' : 'group'; App.rerender(); };
-    root.querySelectorAll('[data-toggle-acc]').forEach(b => b.onclick = () => {
-      const k = b.dataset.toggleAcc; st.collapsed.has(k) ? st.collapsed.delete(k) : st.collapsed.add(k); App.rerender();
-    });
-    fitTree();
   }
   // 표 높이를 '첫 화면의 남은 높이'에 맞춰, 아래로 스크롤하지 않아도 가로 스크롤바가 보이게 합니다.
   function fitTree() {
@@ -487,5 +498,5 @@ window.UI = (function () {
     });
   }
 
-  return { amt, prof, ret, weight, w, priceCell, statusTable, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, loadFilters, chart, moneyTick, pickInstrument };
+  return { amt, prof, ret, weight, w, priceCell, statusTable, downloadXlsx, XF, groupBadge, totalsCards, groupTable, holdingsTree, treeSection, bindTree, loadFilters, filterBar, bindFilters, groupMatch, accBroker, accType, chart, moneyTick, pickInstrument };
 })();
