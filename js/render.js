@@ -299,10 +299,35 @@ window.UI = (function () {
   // entries: [{ label: '2026-10-09', sub: '08:00', tag: '', model }]  (model = Calc.buildModel / buildSnapshotModel 결과)
   // 총 평가·투자·손익·수익률·환율 + 자산군별 총액 7칸 → 자산군별 비중 7칸.
   // 혼합 모드는 줄마다 원화 줄 + 달러 줄 (비중은 그 통화 자산 안에서)
-  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap', list = Groups.list, dimLabel = '자산군', pickable = false } = {}) {
+  function statusTable(entries, mode, { firstHeader = '날짜', empty = '데이터가 없습니다', wrapClass = 'hist-wrap', list = Groups.list, dimLabel = '자산군', pickable = false, drawdown = false } = {}) {
     // pickable: 머리글의 묶음 이름(성장 · 현금 …)을 누를 수 있는 버튼으로 (data-pick-dim = 코드)
     // list·dimLabel: 자산군 대신 추종 통화·자산 성향으로 묶을 때 (model.groups 도 그 기준으로 묶은 값)
+    // drawdown: 총 평가금액 옆에 '고점 대비'(그날까지 가장 높았던 총 평가금액보다 얼마나 낮은지)와 'MDD'(그날까지 가장 크게 떨어졌던 %) 칸
     const mixed = mode === 'MIXED';
+    // entries 는 최근 날짜가 위 → 오래된 날부터 거꾸로 훑으며 고점 · 최대 낙폭 계산 (통화별 모드는 원화 · 달러 따로)
+    const dd = new Map();
+    if (drawdown) {
+      const run = {};
+      [...entries].reverse().forEach(e => {
+        const m = e.model, out = {};
+        const series = mixed ? [['kr', m.total.kr.val, 'KRW'], ['us', m.total.us.val, 'USD']]
+          : [['all', ...(p => [p.val, p.cur])(Calc.view(m.total, mode, m.fx, m.gold).parts[0])]];
+        series.forEach(([k, val, cur]) => {
+          const r = run[k] || (run[k] = { peak: -Infinity, mdd: 0 });
+          r.peak = Math.max(r.peak, val);
+          const amt = val - r.peak, pctDD = r.peak > 0 ? (amt / r.peak) * 100 : 0;
+          r.mdd = Math.min(r.mdd, pctDD);
+          out[k] = { amt, pct: pctDD, mdd: r.mdd, cur };
+        });
+        dd.set(e, out);
+      });
+    }
+    const ddCells = (e, k) => {
+      if (!drawdown) return '';
+      const d = dd.get(e)[k];
+      return `<td class="num" title="그날까지의 최고 총 평가금액 대비 ${Fmt.pct(d.pct)}">${d.amt < 0 ? `<span class="${Fmt.cls(d.amt, d.cur)}">${Fmt.signedMoney(d.amt, d.cur)}</span>` : '<span class="muted">고점</span>'}</td>`
+        + `<td class="num" title="그날까지 고점 대비 가장 크게 떨어졌던 비율">${d.mdd < 0 ? `<span class="${Fmt.cls(d.mdd, 'PCT')}">${Fmt.pct(d.mdd)}</span>` : '<span class="muted">0.00%</span>'}</td>`;
+    };
     const gcell = (i, html) => `<td class="num${i === 0 ? ' g-first' : ''}">${html}</td>`;
     const labelCell = (e, span) => `<td class="nowrap sticky-col"${span ? ` rowspan="${span}"` : ''}>${esc(e.label)}${e.sub ? ` <span class="muted small">${esc(e.sub)}</span>` : ''}${e.tag ? ` <span class="tag">${esc(e.tag)}</span>` : ''}</td>`;
     const rows = entries.map(e => {
@@ -312,7 +337,7 @@ window.UI = (function () {
         const amounts = list.map((g, i) => gcell(i, amt(Calc.view(m.groups[g.code].agg, mode, m.fx, m.gold), 'val'))).join('');
         const weights = list.map((g, i) => gcell(i, Fmt.weight(w(m.groups[g.code].agg.valK, m.total.valK)))).join('');
         return `<tr>${labelCell(e)}
-          <td class="num">${amt(v, 'val')}</td><td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v, { split: false })}</td><td class="num">${ret(v)}</td>
+          <td class="num">${amt(v, 'val')}</td>${ddCells(e, 'all')}<td class="num">${amt(v, 'inv')}</td><td class="num">${prof(v, { split: false })}</td><td class="num">${ret(v)}</td>
           <td class="num">${Fmt.fx(m.fx || 0)}</td>${amounts}${weights}</tr>`;
       }
       return [['KRW', '원화', 'kr'], ['USD', '달러', 'us']].map(([cur, label, k], idx) => {
@@ -322,7 +347,7 @@ window.UI = (function () {
         const weights = list.map((g, i) => { const a = m.groups[g.code].agg; return gcell(i, has(a) ? Fmt.weight(w(a[k].val, t.val)) : '<span class="muted">—</span>'); }).join('');
         return `<tr class="${idx === 0 ? 'pair-top' : 'pair-bottom'}">${idx === 0 ? labelCell(e, 2) : ''}
           <td class="cur-col">${label}</td>
-          <td class="num">${Fmt.money(t.val, cur)}</td><td class="num">${Fmt.money(t.inv, cur)}</td>
+          <td class="num">${Fmt.money(t.val, cur)}</td>${ddCells(e, k)}<td class="num">${Fmt.money(t.inv, cur)}</td>
           <td class="num ${Fmt.cls(p, cur)}">${Fmt.signedMoney(p, cur)}</td><td class="num ${Fmt.cls(r, 'PCT')}">${Fmt.pct(r)}</td>
           ${idx === 0 ? `<td class="num" rowspan="2">${Fmt.fx(m.fx || 0)}</td>` : ''}${amounts}${weights}</tr>`;
       }).join('');
@@ -330,14 +355,14 @@ window.UI = (function () {
     return `<div class="tbl-wrap ${wrapClass}"><table class="tbl hist">
       <thead>
         <tr>
-          <th rowspan="2" class="sticky-col">${firstHeader}</th>${mixed ? '<th rowspan="2">통화</th>' : ''}<th rowspan="2" class="num">총 평가금액</th><th rowspan="2" class="num">총 투자금액</th>
+          <th rowspan="2" class="sticky-col">${firstHeader}</th>${mixed ? '<th rowspan="2">통화</th>' : ''}<th rowspan="2" class="num">총 평가금액</th>${drawdown ? '<th rowspan="2" class="num" title="그날까지 가장 높았던 총 평가금액보다 얼마나 낮은지 (그날이 고점이면 고점으로 표시)">고점 대비</th><th rowspan="2" class="num" title="최대 낙폭: 그날까지 고점 대비 가장 크게 떨어졌던 비율">MDD</th>' : ''}<th rowspan="2" class="num">총 투자금액</th>
           <th rowspan="2" class="num">총 손익</th><th rowspan="2" class="num">총 수익률</th><th rowspan="2" class="num">환율</th>
           <th colspan="${list.length}" class="center g-first">${dimLabel}별 총액</th>
           <th colspan="${list.length}" class="center g-first">${dimLabel}별 비중 <span class="muted">${mixed ? '(통화별 자산 안에서)' : '(원화 환산 기준)'}</span></th>
         </tr>
         <tr>${[0, 1].map(() => list.map((g, i) => `<th class="num${i === 0 ? ' g-first' : ''}">${pickable ? `<button type="button" class="th-pick" data-pick-dim="${esc(g.code)}" title="${esc(g.name)} 구성 종목 보기">` : ''}<span class="dot" style="background:${g.color}"></span>${g.name}${pickable ? '</button>' : ''}</th>`).join('')).join('')}</tr>
       </thead>
-      <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + list.length * 2}" class="muted">${empty}</td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="${(mixed ? 7 : 6) + (drawdown ? 2 : 0) + list.length * 2}" class="muted">${empty}</td></tr>`}</tbody>
     </table></div>`;
   }
 

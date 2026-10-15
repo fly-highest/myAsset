@@ -36,7 +36,7 @@
       const asOf = ps.latestAsOf ? Fmt.mdhm(ps.latestAsOf) : '';
       entries.unshift({ label: today, sub: asOf ? '시세 ' + asOf : '', tag: '현재 · 저장 전', model: now });
     }
-    const table = UI.statusTable(entries, mode, { empty: '스냅샷이 없습니다' });
+    const table = UI.statusTable(entries, mode, { empty: '스냅샷이 없습니다', drawdown: true });
 
     document.getElementById('main').innerHTML = `
       <div class="page-hd">
