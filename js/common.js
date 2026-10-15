@@ -30,7 +30,21 @@ window.App = (function () {
     }).catch(() => {});
   })();
 
-  const app = { mode: 'KRW' }; // 기본값 원화환산, 선택 상태는 저장하지 않음 (13항)
+  // 환산 방식(원화·달러·통화별·금): 고르면 모든 화면에 같이 적용 — 이 브라우저에 기억 (처음은 원화환산)
+  const MODE_KEY = 'myAsset.mode';
+  const app = { mode: 'KRW' };
+  try { const s = localStorage.getItem(MODE_KEY); if (MODES.some(m => m.code === s)) app.mode = s; } catch (e) { /* 무시 */ }
+  // 다른 창(탭)에서 바꾸면 이 창도 따라 바꿈
+  window.addEventListener('storage', e => {
+    if (e.key !== MODE_KEY || !MODES.some(m => m.code === e.newValue) || e.newValue === app.mode) return;
+    app.mode = e.newValue;
+    const el = document.getElementById('app-header');
+    if (el) {
+      el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === app.mode));
+      const gc = el.querySelector('#hdr-gold'); if (gc) gc.hidden = app.mode !== 'GOLD';
+    }
+    rerender();
+  });
   let renderFn = null;
   let rendering = false, pending = false;
 
@@ -90,6 +104,7 @@ window.App = (function () {
     if (cloudEl) cloudEl.addEventListener('click', () => { if (DataService.getCloudStatus().state === 'error') DataService.syncFromCloud(); });
     el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
       app.mode = b.dataset.mode;
+      try { localStorage.setItem(MODE_KEY, app.mode); } catch (e) { /* 무시 */ }
       const gc = el.querySelector('#hdr-gold'); if (gc) gc.hidden = app.mode !== 'GOLD';
       el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x.dataset.mode === app.mode));
       rerender();
