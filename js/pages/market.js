@@ -125,7 +125,9 @@
   function maHidden(m) { try { const s = JSON.parse(localStorage.getItem(MAH_KEY(m.id))); if (Array.isArray(s)) return s; } catch (e) { /* 무시 */ } return []; }
   const saveMaHidden = (m, h) => { try { localStorage.setItem(MAH_KEY(m.id), JSON.stringify(h)); } catch (e) { /* 무시 */ } };
   // 이 차트의 이동평균 목록 = 지우지 않은 기본 + 추가한 것 (같은 키면 기본 우선)
-  const optsOf = (custom, hidden) => { const base = MA_OPTS.filter(o => !hidden.includes(o[0])); return [...base, ...custom.filter(c => !base.some(o => o[0] === c[0]))]; };
+  // 짧은 기간이 왼쪽: 기간 오름차순 (일 = 거래일 수, 개월·년 = 개월 × 21거래일로 비교)
+  const maSpan = o => (o[0][0] === 'n' ? o[2] : o[2] * 21);
+  const optsOf = (custom, hidden) => { const base = MA_OPTS.filter(o => !hidden.includes(o[0])); return [...base, ...custom.filter(c => !base.some(o => o[0] === c[0]))].sort((a, b) => maSpan(a) - maSpan(b)); };
   const maOpts = m => optsOf(maCustom(m), maHidden(m));
   // 이동평균 선 두께 (차트마다, 키별 1~10). 정하지 않은 선은 기본 두께
   const MAW_KEY = id => 'myAsset.market.maWidth.' + id;
