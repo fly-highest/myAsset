@@ -68,13 +68,13 @@
         </div>
         <div class="tbl-wrap stats-wrap"><table class="tbl tree stats-tbl">
           <thead><tr>
-            <th class="chk-col"><input type="checkbox" id="chk-all" ${on.length === rows.length ? 'checked' : ''} title="모두 체크 / 모두 해제" aria-label="모두 체크"></th><th>증권사</th><th>계좌 종류</th><th>계좌</th><th>종목명</th><th>심볼</th><th>자산군</th>
+            <th class="chk-col"><input type="checkbox" class="chk-all" ${on.length === rows.length ? 'checked' : ''} title="모두 체크 / 모두 해제" aria-label="모두 체크"></th><th>증권사</th><th>계좌 종류</th><th>계좌</th><th>종목명</th><th>심볼</th><th>자산군</th>
             <th class="num">수량</th><th class="num">평균매입가</th><th class="num">매입환율</th><th class="num">현재가</th>
             <th class="num">평가금액</th><th class="num">투자금액</th><th class="num">손익</th><th class="num">수익률</th>
             <th class="num" title="종목 행: 체크한 종목 합계 대비 / 합계 행: 전체 대비">비중</th>
           </tr></thead>
           <tbody>
-            <tr class="broker-row sum-row"><td colspan="11"><b>${on.length < rows.length ? '체크한 종목 합계' : filtered ? '선택 대상 합계' : '전체 합계'}</b> <span class="muted">· ${on.length}/${rows.length}개 종목 행 · ${new Set(on.map(r => r.a.key)).size}개 계좌</span></td>
+            <tr class="broker-row sum-row"><td class="chk-col"><input type="checkbox" class="chk-all" ${on.length === rows.length ? 'checked' : ''} title="전체 선택 / 전체 해제" aria-label="전체 선택 또는 해제"></td><td colspan="10"><b>${on.length < rows.length ? '체크한 종목 합계' : filtered ? '선택 대상 합계' : '전체 합계'}</b> <span class="muted">· ${on.length}/${rows.length}개 종목 행 · ${new Set(on.map(r => r.a.key)).size}개 계좌</span></td>
               <td class="num">${UI.amt(sv, 'val')}</td><td class="num">${UI.amt(sv, 'inv')}</td><td class="num">${UI.prof(sv)}</td><td class="num">${UI.ret(sv, { split: true })}</td>
               <td class="num" title="전체 대비 비중">${UI.weight(UI.w(sum.valK, model.total.valK), false)}</td></tr>
             ${body || '<tr><td colspan="16" class="muted center">고른 조건에 맞는 종목이 없습니다.</td></tr>'}
@@ -89,8 +89,11 @@
     main.style.setProperty('--th-h', (thead ? thead.offsetHeight : 0) + 'px');
     // 행 체크박스 → 체크된 행만 맨 위 합계에 더함
     main.querySelectorAll('[data-row]').forEach(cb => cb.onchange = () => { cb.checked ? unchecked.delete(cb.dataset.row) : unchecked.add(cb.dataset.row); App.rerender(); });
-    main.querySelector('#chk-all').indeterminate = on.length > 0 && on.length < rows.length; // 일부만 체크 = 반쯤 표시
-    main.querySelector('#chk-all').onchange = e => { rows.forEach(({ x }) => (e.target.checked ? unchecked.delete(rowKey(x)) : unchecked.add(rowKey(x)))); App.rerender(); };
+    // 전체 선택 / 해제 체크박스 (머리글 · 합계 행 왼쪽, 같은 동작). 일부만 체크 = 반쯤 표시
+    main.querySelectorAll('.chk-all').forEach(cb => {
+      cb.indeterminate = on.length > 0 && on.length < rows.length;
+      cb.onchange = e => { rows.forEach(({ x }) => (e.target.checked ? unchecked.delete(rowKey(x)) : unchecked.add(rowKey(x)))); App.rerender(); };
+    });
     main.querySelector('#s-sort').onchange = e => {
       sortBy = e.target.value;
       try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) { /* 무시 */ }
