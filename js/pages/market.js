@@ -121,6 +121,11 @@
   }
   const saveMaCustom = (m, list) => { try { localStorage.setItem(MAC_KEY(m.id), JSON.stringify(list)); } catch (e) { /* 무시 */ } };
   const maOpts = m => [...MA_OPTS, ...maCustom(m).filter(c => !MA_OPTS.some(o => o[0] === c[0]))];
+  // 이동평균 선 두께 (차트마다, 키별 1~10). 정하지 않은 선은 기본 두께
+  const MAW_KEY = id => 'myAsset.market.maWidth.' + id;
+  function maWidths(m) { try { const s = JSON.parse(localStorage.getItem(MAW_KEY(m.id))); if (s && typeof s === 'object') return s; } catch (e) { /* 무시 */ } return {}; }
+  const saveMaWidths = (m, w) => { try { localStorage.setItem(MAW_KEY(m.id), JSON.stringify(w)); } catch (e) { /* 무시 */ } };
+  const maWidth = (m, k, def) => { const v = Number(maWidths(m)[k]); return v >= 1 && v <= 10 ? v : def; };
 
   // n개 단순 이동평균. 앞쪽에 n개가 안 되는 날은 null
   const smaN = (hist, n) => { let sum = 0; return hist.map((r, i) => { sum += r.close; if (i >= n) sum -= hist[i - n].close; return i >= n - 1 ? sum / n : null; }); };
@@ -174,11 +179,12 @@
   function maPicker(m, sel) {
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
     return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><span class="ma-title">이동평균</span>
-      ${maOpts(m).map(([k, l, , c]) => box(k, l, c)).join('')}
-      ${m.band ? box('band', '200일 ±1%', BAND) : ''}</div>`;
+      ${maOpts(m).filter(([k]) => sel.includes(k)).map(([k, l, , c]) => box(k, l, c)).join('')}
+      ${m.band && sel.includes('band') ? box('band', '200일 ±1%', BAND) : ''}${sel.length ? '' : '<span class="muted">없음</span>'}</div>`;
   }
 
-  // [⚙ 설정] 팝업: 지금 고른 이동평균을 체크박스로 보여 주고, 원하는 기간(숫자 + 일·개월·년)과 색(#RRGGBB)으로 새 이동평균 추가
+  // [⚙ 설정] 팝업: 지금 고른 이동평균을 체크박스로 보여 주고(선 두께 1~10 선택), 원하는 기간(숫자 + 일·개월·년)과 색(#RRGGBB)으로 새 이동평균 추가
+  //   차트 위 [⚙ 설정] 오른쪽에는 체크한 이동평균만 보임
   //   [적용]을 눌러야 저장 (이 차트에만, 이 브라우저에 기억). 기본 이동평균(5일~5년)은 지울 수 없고 추가한 것만 지움
   const MA_PALETTE = ['#0ea5e9', '#a855f7', '#ef4444', '#22c55e', '#f97316', '#14b8a6', '#e11d48', '#64748b', '#84cc16', '#6366f1'];
   function maDialog(m, done) {
@@ -186,13 +192,16 @@
     let sel = maSelected(m).filter(k => k === 'band' || maOpts(m).some(o => o[0] === k));
     const opts = () => [...MA_OPTS, ...custom.filter(c => !MA_OPTS.some(o => o[0] === c[0]))];
     const nextColor = () => MA_PALETTE.find(c => !opts().some(o => o[3].toLowerCase() === c)) || MA_PALETTE[custom.length % MA_PALETTE.length];
+    let widths = { ...maWidths(m) }; // 선 두께 (키 → 1~10, 없으면 기본)
+    const wSel = k => `<select class="inline ma-w" data-w="${k}" title="선 두께 (1 = 가장 가늘게, 10 = 가장 굵게)">
+        <option value="">두께 기본</option>${Array.from({ length: 10 }, (_, i) => i + 1).map(v => `<option value="${v}" ${Number(widths[k]) === v ? 'selected' : ''}>두께 ${v}</option>`).join('')}</select>`;
     const list = () => opts().map(([k, l, , c]) => {
       const mine = custom.some(x => x[0] === k);
       return `<div class="ma-row"><label class="check"><input type="checkbox" data-k="${k}" ${sel.includes(k) ? 'checked' : ''}>
         <span class="ma-swatch" style="background:${c}"></span>${l} 평균${mine ? ' <span class="muted small">(추가)</span>' : ''}</label>
-        ${mine ? `<button type="button" class="btn btn-sm btn-ghost-danger" data-del="${k}">삭제</button>` : ''}</div>`;
+        <span class="ma-row-r">${wSel(k)}${mine ? `<button type="button" class="btn btn-sm btn-ghost-danger" data-del="${k}">삭제</button>` : ''}</span></div>`;
     }).join('') + (m.band ? `<div class="ma-row"><label class="check"><input type="checkbox" data-k="band" ${sel.includes('band') ? 'checked' : ''}>
-        <span class="ma-swatch" style="background:${BAND}"></span>200일 ±1% 띠</label></div>` : '');
+        <span class="ma-swatch" style="background:${BAND}"></span>200일 ±1% 띠</label><span class="ma-row-r">${wSel('band')}</span></div>` : '');
     const color0 = nextColor();
     const dlg = App.modal({
       title: `이동평균 설정 — ${esc(m.title.split(' · ')[0])}`,
@@ -213,6 +222,9 @@
           sel = [...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
           saveMaCustom(m, custom);
           saveMa(m, sel);
+          api.body.querySelectorAll('[data-w]').forEach(x => { if (x.value) widths[x.dataset.w] = Number(x.value); else delete widths[x.dataset.w]; });
+          Object.keys(widths).forEach(k => { if (k !== 'band' && !opts().some(o => o[0] === k)) delete widths[k]; }); // 지운 이동평균의 두께는 정리
+          saveMaWidths(m, widths);
           api.close();
           done();
         }
@@ -221,6 +233,7 @@
     const body = dlg.body;
     const err = msg => { const e = body.querySelector('#ma-err'); e.hidden = !msg; e.textContent = msg || ''; };
     const redraw = () => {
+      body.querySelectorAll('[data-w]').forEach(x => { if (x.value) widths[x.dataset.w] = Number(x.value); else delete widths[x.dataset.w]; }); // 다시 그려도 고른 두께 유지
       sel = [...body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k).concat(sel.filter(k => !body.querySelector(`[data-k="${k}"]`)));
       body.querySelector('#ma-list').innerHTML = list();
       bindDel();
@@ -349,12 +362,12 @@
       if (c.hiRow && c.loRow) datasets.push({ label: '', data: labels.map(d => (d === c.hiRow.date ? c.hiRow.close : d === c.loRow.date ? c.loRow.close : null)), showLine: false,
         pointRadius: 4, pointHoverRadius: 4, pointBackgroundColor: '#fff', pointBorderColor: s.color, pointBorderWidth: 2, extremes: { hi: c.hiRow, lo: c.loRow, multi: m.series.length > 1 ? s.label + ' ' : '' } });
       maOpts(m).filter(o => sel.includes(o[0])).forEach(([k, l, , color]) => {
-        datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, maValues(hist, k, m)), borderColor: color, borderWidth: 1.4,
+        datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, maValues(hist, k, m)), borderColor: color, borderWidth: maWidth(m, k, 1.4),
           borderDash: si > 0 ? [2, 3] : (k[0] === 'y' ? [6, 4] : []), pointRadius: 0, tension: 0.1, spanGaps: true });
       });
       if (m.band && sel.includes('band')) {
         const m200 = smaN(hist, 200);
-        [['+1%', 1.01], ['−1%', 0.99]].forEach(([t, f]) => datasets.push({ label: `200일 ${t}`, data: onLabels(hist, m200.map(v => (v == null ? null : v * f))), borderColor: BAND, borderWidth: 1.1, borderDash: [3, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
+        [['+1%', 1.01], ['−1%', 0.99]].forEach(([t, f]) => datasets.push({ label: `200일 ${t}`, data: onLabels(hist, m200.map(v => (v == null ? null : v * f))), borderColor: BAND, borderWidth: maWidth(m, 'band', 1.1), borderDash: [3, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
       }
     });
     if (m.zero) datasets.push({ label: '', data: labels.map(() => 0), borderColor: '#9aa5b1', borderWidth: 1, borderDash: [2, 2], pointRadius: 0 }); // 0 기준선

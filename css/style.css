@@ -411,3 +411,6 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .ma-cfg:hover { border-color: var(--primary); color: var(--primary); }
 .ma-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; margin: 6px 0 4px; }
 .ma-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.ma-row-r { display: inline-flex; align-items: center; gap: 4px; }
+.ma-row .ma-w { font-size: 12px; padding: 2px 4px; height: auto; }
+.ma-list { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
