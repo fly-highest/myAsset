@@ -120,7 +120,13 @@
     return [];
   }
   const saveMaCustom = (m, list) => { try { localStorage.setItem(MAC_KEY(m.id), JSON.stringify(list)); } catch (e) { /* 무시 */ } };
-  const maOpts = m => [...MA_OPTS, ...maCustom(m).filter(c => !MA_OPTS.some(o => o[0] === c[0]))];
+  // 지운 기본 이동평균 (차트마다): [⚙ 설정]에서 [삭제]한 기본 이동평균(5일~5년) 키 목록
+  const MAH_KEY = id => 'myAsset.market.maHidden.' + id;
+  function maHidden(m) { try { const s = JSON.parse(localStorage.getItem(MAH_KEY(m.id))); if (Array.isArray(s)) return s; } catch (e) { /* 무시 */ } return []; }
+  const saveMaHidden = (m, h) => { try { localStorage.setItem(MAH_KEY(m.id), JSON.stringify(h)); } catch (e) { /* 무시 */ } };
+  // 이 차트의 이동평균 목록 = 지우지 않은 기본 + 추가한 것 (같은 키면 기본 우선)
+  const optsOf = (custom, hidden) => { const base = MA_OPTS.filter(o => !hidden.includes(o[0])); return [...base, ...custom.filter(c => !base.some(o => o[0] === c[0]))]; };
+  const maOpts = m => optsOf(maCustom(m), maHidden(m));
   // 이동평균 선 두께 (차트마다, 키별 1~10). 정하지 않은 선은 기본 두께
   const MAW_KEY = id => 'myAsset.market.maWidth.' + id;
   function maWidths(m) { try { const s = JSON.parse(localStorage.getItem(MAW_KEY(m.id))); if (s && typeof s === 'object') return s; } catch (e) { /* 무시 */ } return {}; }
@@ -185,12 +191,13 @@
 
   // [⚙ 설정] 팝업: 지금 고른 이동평균을 체크박스로 보여 주고(선 두께 1~10 선택), 원하는 기간(숫자 + 일·개월·년)과 색(#RRGGBB)으로 새 이동평균 추가
   //   차트 위 [⚙ 설정] 오른쪽에는 체크한 이동평균만 보임
-  //   [적용]을 눌러야 저장 (이 차트에만, 이 브라우저에 기억). 기본 이동평균(5일~5년)은 지울 수 없고 추가한 것만 지움
+  //   [적용]을 눌러야 저장 (이 차트에만, 이 브라우저에 기억). 이동평균마다 [삭제] (기본 5일~5년도 지울 수 있고, [기본 이동평균 되살리기]로 다시 보임)
   const MA_PALETTE = ['#0ea5e9', '#a855f7', '#ef4444', '#22c55e', '#f97316', '#14b8a6', '#e11d48', '#64748b', '#84cc16', '#6366f1'];
   function maDialog(m, done) {
     let custom = maCustom(m);
     let sel = maSelected(m).filter(k => k === 'band' || maOpts(m).some(o => o[0] === k));
-    const opts = () => [...MA_OPTS, ...custom.filter(c => !MA_OPTS.some(o => o[0] === c[0]))];
+    let hidden = maHidden(m);
+    const opts = () => optsOf(custom, hidden);
     const nextColor = () => MA_PALETTE.find(c => !opts().some(o => o[3].toLowerCase() === c)) || MA_PALETTE[custom.length % MA_PALETTE.length];
     let widths = { ...maWidths(m) }; // 선 두께 (키 → 1~10, 없으면 기본)
     const wSel = k => `<select class="inline ma-w" data-w="${k}" title="선 두께 (1 = 가장 가늘게, 10 = 가장 굵게)">
@@ -199,9 +206,10 @@
       const mine = custom.some(x => x[0] === k);
       return `<div class="ma-row"><label class="check"><input type="checkbox" data-k="${k}" ${sel.includes(k) ? 'checked' : ''}>
         <span class="ma-swatch" style="background:${c}"></span>${l} 평균${mine ? ' <span class="muted small">(추가)</span>' : ''}</label>
-        <span class="ma-row-r">${wSel(k)}${mine ? `<button type="button" class="btn btn-sm btn-ghost-danger" data-del="${k}">삭제</button>` : ''}</span></div>`;
+        <span class="ma-row-r">${wSel(k)}<button type="button" class="btn btn-sm btn-ghost-danger" data-del="${k}" title="이 차트에서 이 이동평균을 지웁니다">삭제</button></span></div>`;
     }).join('') + (m.band ? `<div class="ma-row"><label class="check"><input type="checkbox" data-k="band" ${sel.includes('band') ? 'checked' : ''}>
-        <span class="ma-swatch" style="background:${BAND}"></span>200일 ±1% 띠</label><span class="ma-row-r">${wSel('band')}</span></div>` : '');
+        <span class="ma-swatch" style="background:${BAND}"></span>200일 ±1% 띠</label><span class="ma-row-r">${wSel('band')}</span></div>` : '')
+      + (hidden.length ? `<div class="ma-row"><button type="button" class="btn btn-sm" data-restore title="지운 기본 이동평균(${hidden.map(k => (MA_OPTS.find(o => o[0] === k) || [k, k])[1]).join(', ')})을 목록에 다시 넣습니다">기본 이동평균 되살리기 (${hidden.length}개)</button></div>` : '');
     const color0 = nextColor();
     const dlg = App.modal({
       title: `이동평균 설정 — ${esc(m.title.split(' · ')[0])}`,
@@ -221,6 +229,7 @@
         label: '적용', kind: 'primary', onClick: api => {
           sel = [...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
           saveMaCustom(m, custom);
+          saveMaHidden(m, hidden);
           saveMa(m, sel);
           api.body.querySelectorAll('[data-w]').forEach(x => { if (x.value) widths[x.dataset.w] = Number(x.value); else delete widths[x.dataset.w]; });
           Object.keys(widths).forEach(k => { if (k !== 'band' && !opts().some(o => o[0] === k)) delete widths[k]; }); // 지운 이동평균의 두께는 정리
@@ -239,10 +248,14 @@
       bindDel();
     };
     const bindDel = () => body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
-      custom = custom.filter(x => x[0] !== b.dataset.del); sel = sel.filter(k => k !== b.dataset.del);
+      const k = b.dataset.del;
+      if (custom.some(x => x[0] === k)) custom = custom.filter(x => x[0] !== k); else if (!hidden.includes(k)) hidden = [...hidden, k]; // 기본 이동평균은 숨김 목록으로
+      sel = sel.filter(x => x !== k);
       body.querySelector(`[data-k="${b.dataset.del}"]`).checked = false; redraw();
     });
     bindDel();
+    // [기본 이동평균 되살리기]: 지운 기본 이동평균을 목록에 다시 넣음 (체크는 꺼진 채로)
+    body.addEventListener('click', e => { if (e.target.closest('[data-restore]')) { hidden = []; redraw(); } });
     const cText = body.querySelector('#ma-c'), cPick = body.querySelector('#ma-cp');
     cPick.oninput = () => { cText.value = cPick.value; };
     cText.oninput = () => { if (/^#[0-9a-f]{6}$/i.test(cText.value.trim())) cPick.value = cText.value.trim(); };
