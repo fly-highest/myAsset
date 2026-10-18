@@ -1,5 +1,5 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
-//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · GLD · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
+//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · KOSPI · KOSDAQ · GLD · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
 //   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화 · 데이터랩 비트코인 도미넌스) · 네이버(한국 국채 3년) · KB(선도아파트 50 · 아파트 PIR) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
@@ -14,13 +14,16 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } });
 const UA = { 'User-Agent': 'Mozilla/5.0' };
-const SERIES: { pair: string; google: string | null; yahoo: string; everyDay?: boolean }[] = [
+const SERIES: { pair: string; google: string | string[] | null; yahoo: string; everyDay?: boolean }[] = [
   // 달러 인덱스 · WTI · 브렌트유: GOOGLEFINANCE 가 값을 주지 않음 (2026-10-10, 시트로 20회 확인) → Yahoo 만 사용
   { pair: 'DXY', google: null, yahoo: 'DX-Y.NYB' },
   { pair: 'WTI', google: null, yahoo: 'CL=F' },
   { pair: 'BRENT', google: null, yahoo: 'BZ=F' },
   { pair: 'QQQ', google: 'NASDAQ:QQQ', yahoo: 'QQQ' },
   { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' },
+  // 코스피 · 코스닥 지수 (한국 날짜): GOOGLEFINANCE 표기가 확실하지 않아 후보를 차례로 시도 → 없으면 Yahoo
+  { pair: 'KOSPI', google: ['KRX:KOSPI', 'INDEXKRX:KOSPI'], yahoo: '^KS11' },
+  { pair: 'KOSDAQ', google: ['KRX:KOSDAQ', 'INDEXKRX:KOSDAQ', 'KOSDAQ:KOSDAQ'], yahoo: '^KQ11' },
   { pair: 'GLD', google: 'NYSEARCA:GLD', yahoo: 'GLD' },
   { pair: 'VIX', google: 'INDEXCBOE:VIX', yahoo: '^VIX' }, // CBOE 변동성 지수
   { pair: 'COPPER', google: null, yahoo: 'HG=F' }, // 구리 선물 (달러/파운드) — 구리/금 비율용
@@ -88,7 +91,7 @@ Deno.serve(async (req) => {
       let bars: Bar[] = [], yErr = '';
       try { bars = await fromYahoo(s.yahoo, !!s.everyDay); } catch (e) { yErr = (e as Error).message; }
       // Google 값 = 오늘(가장 최근 거래일) 종가. 날짜는 Yahoo 의 최근 거래일, Yahoo 가 없으면 뉴욕 날짜(평일·장 시작 후)
-      const gv = s.google ? g.get(s.google) : undefined;
+      const gv = s.google ? ([] as string[]).concat(s.google).map((t) => g.get(t)).find((v) => v) : undefined; // 후보 중 값이 있는 첫 번째
       if (gv) {
         const d = bars.length ? bars[bars.length - 1].date : s.everyDay ? new Date().toISOString().slice(0, 10) : (weekday(ny.date) && ny.afterOpen ? ny.date : null);
         if (d) {

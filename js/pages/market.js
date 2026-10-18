@@ -18,6 +18,11 @@
       series: [{ pair: 'QQQ', label: 'QQQ', color: PRICE }] },
     { id: 'spy', sma: true, title: 'SPY (S&P500 ETF)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'SPY', label: 'SPY', color: PRICE }] },
+    // 코스피 · 코스닥 지수 (포인트, 한국 날짜) — QQQ 와 같은 구성 (50일선 · 200일선 · 200일 ±1%)
+    { id: 'kospi', sma: true, band: true, title: '코스피 (KOSPI 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '1996-12-11', ma: ['n50', 'n200', 'band'],
+      series: [{ pair: 'KOSPI', label: '코스피', color: PRICE }] },
+    { id: 'kosdaq', sma: true, band: true, title: '코스닥 (KOSDAQ 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2000-10-16', ma: ['n50', 'n200', 'band'],
+      series: [{ pair: 'KOSDAQ', label: '코스닥', color: PRICE }] },
     // CNN 공포·탐욕 지수 (미국 주식, 0~100): 0~25 극단적 공포 · 25~45 공포 · 45~55 중립 · 55~75 탐욕 · 75~100 극단적 탐욕
     // 2011-01 ~ 2021-01 은 사용자가 올린 CSV, 그 뒤는 CNN (CNN 의 2021-01-21 이전 값은 50 고정 자리 채움이라 쓰지 않음)
     // alertWhen: 이동평균과 상관없이 75 이상(극단적 탐욕)일 때만 깜빡임
