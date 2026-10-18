@@ -67,7 +67,6 @@
     main.innerHTML = `
       <div class="page-hd">
         <div><h1>통계분석</h1><p class="desc">증권사 · 계좌 종류 · 자산군 버튼으로 대상을 골라, 맨 위 줄에 합계를, 그 아래에 해당 종목을 한 표로 봅니다 (조회 전용). 수정은 <a href="manage.html#accounts">계좌/자산관리 › 계좌 관리</a>에서 합니다.</p></div>
-        <div class="toolbar"><button type="button" class="btn" id="btn-xlsx" title="지금 화면의 표(체크한 종목 합계 + 종목 행, 합계 포함 여부)를 엑셀로 내려받습니다">엑셀 다운로드</button></div>
       </div>
       ${App.statusBar(status)}
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
@@ -81,6 +80,7 @@
             <button type="button" class="btn btn-sm" id="p-load" title="저장해 둔 체크 상태를 불러옵니다 (금액은 지금 시세 기준)">Load</button>
             ${loaded ? `<span class="tag" title="저장 일시 ${esc(fmtAt(loaded.saved_at))}">불러옴: ${esc(loaded.name)}</span>` : ''}
           </div>
+          <div class="toolbar"><span class="small muted">원화 환산 기준</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 화면의 표(체크한 종목 합계 + 종목 행, 합계 포함 여부)를 엑셀로 내려받습니다">엑셀 다운로드</button></div>
         </div>
         <div class="tbl-wrap stats-wrap"><table class="tbl tree stats-tbl">
           <thead><tr>
