@@ -285,6 +285,19 @@ window.DataService = (function () {
     commit();
     return clone(item);
   }
+  // 이름 · 설명만 바꿈 (체크 목록 · 저장 일시는 그대로)
+  async function updateStatsPreset(id, { name, desc }) {
+    const p = (state.statsPresets || []).find(x => x.id === id);
+    if (!p) throw fail('저장본을 찾을 수 없습니다.');
+    name = String(name || '').trim(); desc = String(desc || '').trim();
+    if (!name) throw fail('이름을 입력해 주세요.');
+    if (name.length > 40) throw fail('이름은 40자까지 입력할 수 있습니다.');
+    if (desc.length > 200) throw fail('설명은 200자까지 입력할 수 있습니다.');
+    if (state.statsPresets.some(x => x.id !== id && x.name === name)) throw fail('같은 이름의 저장본이 이미 있습니다.');
+    p.name = name; p.desc = desc;
+    commit();
+    return clone(p);
+  }
   async function deleteStatsPreset(id) { state.statsPresets = (state.statsPresets || []).filter(p => p.id !== id); commit(); }
   async function getManualPrice(instrumentId) {
     return state.manualPrices[instrumentId] ? clone(state.manualPrices[instrumentId]) : null;
@@ -1472,7 +1485,7 @@ window.DataService = (function () {
     updateInstrumentAttrs,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate, getFxHistory, getGoldRate, xauOn, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
-    getStatsPresets, saveStatsPreset, deleteStatsPreset,
+    getStatsPresets, saveStatsPreset, updateStatsPreset, deleteStatsPreset,
     getSnapshots, getSnapshotItems, createDailySnapshot, startRealHistory, autoDailySnapshot, ensureHistory,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,

@@ -419,3 +419,6 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .sp-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow: auto; }
 .sp-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
 .sp-act { display: flex; gap: 6px; flex-shrink: 0; }
+.sp-item .sp-main { flex: 1; min-width: 0; }
+.sp-item .sp-main.form .field { margin-bottom: 6px; }
+.sp-item .sp-desc { white-space: pre-wrap; }

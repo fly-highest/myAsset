@@ -143,34 +143,63 @@
 
   // [Load]: 저장 목록(이름 · 설명 · 저장 일시) → [불러오기] 하면 그때의 필터와 체크를 되살림 (금액은 지금 시세 기준)
   async function loadDialog() {
-    const list = (await DataService.getStatsPresets()).sort((a, b) => (a.saved_at < b.saved_at ? 1 : -1));
+    let list = (await DataService.getStatsPresets()).sort((a, b) => (a.saved_at < b.saved_at ? 1 : -1));
+    // 저장본 한 줄: 보기 / [수정]을 누르면 그 자리에서 이름 · 설명 고치기
+    const view = p => `<div class="sp-main"><b>${esc(p.name)}</b> <span class="muted small">저장 ${esc(fmtAt(p.saved_at))} · ${p.checked.length}개 종목</span>
+          ${p.desc ? `<div class="small sp-desc">${esc(p.desc)}</div>` : ''}</div>
+        <div class="sp-act"><button type="button" class="btn btn-sm btn-primary" data-load="${esc(p.id)}">불러오기</button>
+          <button type="button" class="btn btn-sm" data-edit="${esc(p.id)}">수정</button>
+          <button type="button" class="btn btn-sm btn-ghost-danger" data-del="${esc(p.id)}">삭제</button></div>`;
+    const edit = p => `<div class="sp-main form">
+          <div class="field"><label>이름</label><input type="text" class="sp-e-name" maxlength="40" value="${esc(p.name)}" autocomplete="off"></div>
+          <div class="field"><label>설명 <span class="muted small">(선택)</span></label><textarea class="sp-e-desc" maxlength="200" rows="3">${esc(p.desc || '')}</textarea></div>
+          <div class="notice sp-e-err" hidden></div></div>
+        <div class="sp-act"><button type="button" class="btn btn-sm btn-primary" data-esave="${esc(p.id)}">저장</button>
+          <button type="button" class="btn btn-sm" data-ecancel="${esc(p.id)}">취소</button></div>`;
     const dlg = App.modal({
-      title: '체크 상태 불러오기 (Load)',
-      body: list.length ? `<div class="sp-list">${list.map(p => `<div class="sp-item">
-          <div class="sp-main"><b>${esc(p.name)}</b> <span class="muted small">저장 ${esc(fmtAt(p.saved_at))} · ${p.checked.length}개 종목</span>
-            ${p.desc ? `<div class="small">${esc(p.desc)}</div>` : ''}</div>
-          <div class="sp-act"><button type="button" class="btn btn-sm btn-primary" data-load="${esc(p.id)}">불러오기</button>
-            <button type="button" class="btn btn-sm btn-ghost-danger" data-del="${esc(p.id)}">삭제</button></div></div>`).join('')}</div>`
+      title: '체크 상태 불러오기 (Load)', size: 'wide',
+      body: list.length ? `<div class="sp-list">${list.map(p => `<div class="sp-item" data-id="${esc(p.id)}">${view(p)}</div>`).join('')}</div>`
         : '<div class="muted">저장된 체크 상태가 없습니다. 먼저 [Save]로 저장하세요.</div>',
       buttons: [{ label: '닫기' }]
     });
-    dlg.body.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
-      const p = list.find(x => x.id === b.dataset.load);
-      ['brokers', 'types', 'groups'].forEach(k => { st[k] = Array.isArray(p.filters && p.filters[k]) ? p.filters[k].slice() : []; });
-      try { localStorage.setItem(FILTER_KEY, JSON.stringify({ brokers: st.brokers, types: st.types, groups: st.groups })); } catch (e) { /* 무시 */ }
-      pendingChecked = new Set(p.checked);
-      loaded = { name: p.name, desc: p.desc, saved_at: p.saved_at };
-      dlg.close();
-      App.toast(`'${p.name}'을 불러왔습니다 (저장 ${fmtAt(p.saved_at)}). 금액은 지금 시세 기준입니다.`);
-      App.rerender();
-    });
-    dlg.body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      const p = list.find(x => x.id === b.dataset.del);
-      if (!(await App.confirm(`<b>${esc(p.name)}</b> 저장본을 지울까요?`, { okLabel: '삭제' }))) return;
-      await DataService.deleteStatsPreset(p.id);
-      if (loaded && loaded.name === p.name) loaded = null;
-      b.closest('.sp-item').remove();
-      App.toast(`'${p.name}'을 지웠습니다.`);
+    const itemOf = id => dlg.body.querySelector(`.sp-item[data-id="${CSS.escape(id)}"]`);
+    dlg.body.addEventListener('click', async e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const id = b.dataset.load || b.dataset.edit || b.dataset.del || b.dataset.esave || b.dataset.ecancel;
+      const p = list.find(x => x.id === id);
+      if (!p) return;
+      if (b.dataset.load) {
+        ['brokers', 'types', 'groups'].forEach(k => { st[k] = Array.isArray(p.filters && p.filters[k]) ? p.filters[k].slice() : []; });
+        try { localStorage.setItem(FILTER_KEY, JSON.stringify({ brokers: st.brokers, types: st.types, groups: st.groups })); } catch (err) { /* 무시 */ }
+        pendingChecked = new Set(p.checked);
+        loaded = { name: p.name, desc: p.desc, saved_at: p.saved_at };
+        dlg.close();
+        App.toast(`'${p.name}'을 불러왔습니다 (저장 ${fmtAt(p.saved_at)}). 금액은 지금 시세 기준입니다.`);
+        App.rerender();
+      } else if (b.dataset.edit) {
+        itemOf(id).innerHTML = edit(p);
+        itemOf(id).querySelector('.sp-e-name').focus();
+      } else if (b.dataset.ecancel) {
+        itemOf(id).innerHTML = view(p);
+      } else if (b.dataset.esave) {
+        const box = itemOf(id);
+        try {
+          const wasLoaded = loaded && loaded.name === p.name;
+          const up = await DataService.updateStatsPreset(id, { name: box.querySelector('.sp-e-name').value, desc: box.querySelector('.sp-e-desc').value });
+          list = list.map(x => (x.id === id ? up : x));
+          if (wasLoaded) loaded = { ...loaded, name: up.name, desc: up.desc };
+          box.innerHTML = view(up);
+          App.toast(`'${up.name}'으로 고쳤습니다.`);
+        } catch (err) { const el = box.querySelector('.sp-e-err'); el.hidden = false; el.textContent = err.message; }
+      } else if (b.dataset.del) {
+        if (!(await App.confirm(`<b>${esc(p.name)}</b> 저장본을 지울까요?`, { okLabel: '삭제' }))) return;
+        await DataService.deleteStatsPreset(p.id);
+        list = list.filter(x => x.id !== id);
+        if (loaded && loaded.name === p.name) loaded = null;
+        itemOf(id).remove();
+        App.toast(`'${p.name}'을 지웠습니다.`);
+      }
     });
   }
 
