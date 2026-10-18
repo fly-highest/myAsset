@@ -414,3 +414,4 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .ma-row-r { display: inline-flex; align-items: center; gap: 4px; }
 .ma-row .ma-w { font-size: 12px; padding: 2px 4px; height: auto; }
 .ma-list { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.ma-row .ma-col { width: 30px; height: 26px; padding: 0; border: 1px solid #cfd5df; border-radius: 5px; background: #fff; cursor: pointer; }
