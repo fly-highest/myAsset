@@ -15,6 +15,20 @@
   const saveCheck = () => { try { localStorage.setItem(CHECK_KEY, JSON.stringify({ unchecked: [...unchecked], loaded })); } catch (e) { /* 무시 */ } };
   // Save · Load: 저장한 체크 상태를 불러오면 다음 그리기에서 그 목록대로 체크 (금액은 불러온 시점 값으로 계산)
   let lastView = null; // 엑셀 다운로드용 최근 화면 데이터
+  // 표 머리글: [키, 이름, 숫자 열?, 정렬 값] — 가격은 원화로 바꿔 비교 (달러 · 원화 종목이 섞여도 크기 순)
+  const COLS = [
+    ['broker', '증권사', false, ({ a }) => UI.accBroker(a)], ['type', '계좌 종류', false, ({ a }) => UI.accType(a)], ['acc', '계좌', false, ({ a }) => a.name],
+    ['name', '종목명', false, ({ x }) => x.inst.name], ['sym', '심볼', false, ({ x }) => x.inst.symbol],
+    ['group', '자산군', false, ({ x }) => Groups.codes.indexOf(x.group) * 2 + (x.unassigned ? 1 : 0)],
+    ['q', '수량', true, ({ x }) => x.r.q], ['ap', '평균매입가', true, ({ x }) => (x.inst.asset_type === 'CASH' ? null : x.r.ap * x.r.fxBuy)],
+    ['fx', '매입환율', true, ({ x }) => (x.inst.currency === 'USD' ? x.r.fxBuy : null)], ['cp', '현재가', true, ({ x }) => (x.inst.asset_type === 'CASH' ? null : x.r.cp * x.r.fxE)],
+    ['val', '평가금액', true, ({ x }) => x.r.valK], ['inv', '투자금액', true, ({ x }) => x.r.invK], ['prof', '손익', true, ({ x }) => x.r.profK],
+    ['ret', '수익률', true, ({ x }) => x.r.retK], ['w', '비중', true, ({ x }) => (unchecked.has(rowKey(x)) ? null : x.r.valK)]
+  ];
+  const COLSORT_KEY = 'myAsset.stats.colSort';
+  let colSort = {};
+  try { const s = JSON.parse(localStorage.getItem(COLSORT_KEY)); if (s && s.key) colSort = s; } catch (e) { /* 무시 */ }
+  const saveColSort = () => { try { localStorage.setItem(COLSORT_KEY, JSON.stringify(colSort)); } catch (e) { /* 무시 */ } };
   let pendingChecked = null; // 불러온 저장본의 체크 목록 (다음 그리기에서 반영). loaded = 지금 화면에 불러온 저장본 { name, desc, saved_at }
   const rowKey = x => (x.holding ? x.holding.id : x.accKey + '|' + x.inst.id);
 
@@ -33,6 +47,16 @@
     if (sortBy === 'value') rows.sort((p, q) => q.x.r.valK - p.x.r.valK);
     else if (sortBy === 'ret' || sortBy === 'retAsc') rows.sort((p, q) => (sortBy === 'ret' ? 1 : -1) * (q.x.r.retK - p.x.r.retK));
     else if (sortBy === 'group') rows.sort((p, q) => gIdx(p.x.group) - gIdx(q.x.group) || (p.x.unassigned - q.x.unassigned) || q.x.r.valK - p.x.r.valK);
+    // 머리글 클릭 정렬 (정렬 선택보다 우선): 오름차순 ↔ 내림차순, 세 번째 클릭이면 원래 순서
+    const col = COLS.find(c => c[0] === colSort.key);
+    if (col) {
+      const get = col[3], dir = colSort.dir === 'desc' ? -1 : 1;
+      rows.sort((p, q) => {
+        const a = get(p), b = get(q);
+        if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1; // 값 없는 행은 항상 아래
+        return dir * (typeof a === 'string' ? a.localeCompare(b, 'ko') : a - b);
+      });
+    }
 
     if (pendingChecked) { // 불러온 저장본: 저장한 목록에 있는 행만 체크
       unchecked = new Set(rows.map(({ x }) => rowKey(x)).filter(k => !pendingChecked.has(k)));
@@ -84,10 +108,10 @@
         </div>
         <div class="tbl-wrap stats-wrap"><table class="tbl tree stats-tbl">
           <thead><tr>
-            <th class="chk-col"></th><th>증권사</th><th>계좌 종류</th><th>계좌</th><th>종목명</th><th>심볼</th><th>자산군</th>
-            <th class="num">수량</th><th class="num">평균매입가</th><th class="num">매입환율</th><th class="num">현재가</th>
-            <th class="num">평가금액</th><th class="num">투자금액</th><th class="num">손익</th><th class="num">수익률</th>
-            <th class="num" title="종목 행: 체크한 종목 합계 대비 / 합계 행: 전체 대비">비중</th>
+            <th class="chk-col"></th>${COLS.map(([k, l, num]) => {
+              const on = colSort.key === k, mark = on ? (colSort.dir === 'desc' ? ' ▼' : ' ▲') : '';
+              return `<th class="${num ? 'num ' : ''}th-col${on ? ' on' : ''}"><button type="button" class="th-sort" data-col="${k}" title="${k === 'w' ? '종목 행: 체크한 종목 합계 대비 / 합계 행: 전체 대비 · ' : ''}눌러서 정렬: 오름차순 → 내림차순 → 원래 순서">${l}${mark}</button></th>`;
+            }).join('')}
           </tr></thead>
           <tbody>
             <tr class="broker-row sum-row"><td class="chk-col"><input type="checkbox" class="chk-all" ${on.length === rows.length ? 'checked' : ''} title="전체 선택 / 전체 해제" aria-label="전체 선택 또는 해제"></td><td colspan="10"><b>${on.length < rows.length ? '체크한 종목 합계' : filtered ? '선택 대상 합계' : '전체 합계'}</b> <span class="muted">· ${on.length}/${rows.length}개 종목 행 · ${new Set(on.map(r => r.a.key)).size}개 계좌</span></td>
@@ -114,8 +138,15 @@
     main.querySelector('#p-save').onclick = () => saveDialog(on.map(({ x }) => rowKey(x)), rows.length);
     main.querySelector('#p-load').onclick = loadDialog;
     main.querySelector('#btn-xlsx').onclick = exportXlsx;
+    // 머리글 클릭: 오름차순 → 내림차순 → 원래 순서 (이 브라우저에 기억)
+    main.querySelectorAll('[data-col]').forEach(b => b.onclick = () => {
+      const k = b.dataset.col;
+      colSort = colSort.key !== k ? { key: k, dir: 'asc' } : colSort.dir === 'asc' ? { key: k, dir: 'desc' } : {};
+      saveColSort(); App.rerender();
+    });
     main.querySelector('#s-sort').onchange = e => {
       sortBy = e.target.value;
+      colSort = {}; saveColSort(); // 정렬 선택을 바꾸면 머리글 정렬은 해제
       try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) { /* 무시 */ }
       App.rerender();
     };
