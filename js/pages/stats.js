@@ -14,6 +14,7 @@
   try { const s = JSON.parse(localStorage.getItem(CHECK_KEY)); if (s && Array.isArray(s.unchecked)) { unchecked = new Set(s.unchecked.map(String)); loaded = s.loaded || null; } } catch (e) { /* 무시 */ }
   const saveCheck = () => { try { localStorage.setItem(CHECK_KEY, JSON.stringify({ unchecked: [...unchecked], loaded })); } catch (e) { /* 무시 */ } };
   // Save · Load: 저장한 체크 상태를 불러오면 다음 그리기에서 그 목록대로 체크 (금액은 불러온 시점 값으로 계산)
+  let lastView = null; // 엑셀 다운로드용 최근 화면 데이터
   let pendingChecked = null; // 불러온 저장본의 체크 목록 (다음 그리기에서 반영). loaded = 지금 화면에 불러온 저장본 { name, desc, saved_at }
   const rowKey = x => (x.holding ? x.holding.id : x.accKey + '|' + x.inst.id);
 
@@ -39,6 +40,7 @@
     }
     const on = rows.filter(({ x }) => !unchecked.has(rowKey(x)));
     const sum = on.reduce((g, { x }) => Calc.add(g, x.r), Calc.emptyAgg());
+    lastView = { rows, sum, model, isOn: x => !unchecked.has(rowKey(x)) }; // 엑셀 다운로드용 (지금 화면 그대로)
     const sv = Calc.view(sum, mode, model.fx);
     const filtered = st.brokers.length || st.types.length || st.groups.length;
     const body = rows.map(({ a, x }) => {
@@ -65,6 +67,7 @@
     main.innerHTML = `
       <div class="page-hd">
         <div><h1>통계분석</h1><p class="desc">증권사 · 계좌 종류 · 자산군 버튼으로 대상을 골라, 맨 위 줄에 합계를, 그 아래에 해당 종목을 한 표로 봅니다 (조회 전용). 수정은 <a href="manage.html#accounts">계좌/자산관리 › 계좌 관리</a>에서 합니다.</p></div>
+        <div class="toolbar"><button type="button" class="btn" id="btn-xlsx" title="지금 화면의 표(체크한 종목 합계 + 종목 행, 합계 포함 여부)를 엑셀로 내려받습니다">엑셀 다운로드</button></div>
       </div>
       ${App.statusBar(status)}
       <div class="sec">${UI.totalsCards(model.total, mode, model.fx)}</div>
@@ -110,11 +113,52 @@
     saveCheck(); // 지금 체크 상태 기억 (다른 화면에 다녀와도 유지)
     main.querySelector('#p-save').onclick = () => saveDialog(on.map(({ x }) => rowKey(x)), rows.length);
     main.querySelector('#p-load').onclick = loadDialog;
+    main.querySelector('#btn-xlsx').onclick = exportXlsx;
     main.querySelector('#s-sort').onchange = e => {
       sortBy = e.target.value;
       try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) { /* 무시 */ }
       App.rerender();
     };
+  }
+
+  // ---------------- 엑셀 다운로드: 지금 화면의 표 그대로 (원화 환산 기준) ----------------
+  // 1행 제목 · 2행 기준(시세 시각 · 환율 · 필터 · 불러온 저장본) → 머리글 → 체크한 종목 합계 → 종목 행(합계 포함 여부 ○/×)
+  async function exportXlsx() {
+    if (!lastView) return;
+    const { rows, sum, model, isOn } = lastView;
+    const ps = await DataService.getPriceStatus();
+    const kst = iso => fmtAt(iso || new Date().toISOString());
+    const names = (k, f) => (st[k].length ? st[k].map(f).join(', ') : '전체');
+    const info = [`시세 기준 ${ps.latestAsOf ? kst(ps.latestAsOf) : '예시 가격'}`, `환율 ₩${Fmt.plain(model.fx, 2)}/$`,
+      `증권사: ${names('brokers', v => v)}`, `계좌 종류: ${names('types', v => v)}`, `자산군: ${names('groups', c => (c === 'UNASSIGNED' ? '미지정만' : Groups.name(c)))}`,
+      loaded ? `불러온 저장본: ${loaded.name} (저장 ${kst(loaded.saved_at)})` : ''].filter(Boolean).join(' · ');
+    const head = ['합계 포함', '증권사', '계좌 종류', '계좌', '종목명', '심볼', '거래소', '자산군', '통화', '수량', '평균매입가', '매입환율', '현재가',
+      '평가금액(원)', '투자금액(원)', '손익(원)', '수익률(%)', '가격손익(원)', '환차손익(원)', '비중(%)'];
+    const r0 = n => Math.round(n);
+    const r2 = n => Math.round(n * 100) / 100;
+    const onCount = rows.filter(({ x }) => isOn(x)).length;
+    const out = [
+      ['myAsset 통계분석 — 원화 환산'], [info], [],
+      head,
+      [`체크한 종목 합계 (${onCount}/${rows.length})`, '', '', '', '', '', '', '', '', '', '', '', '',
+        r0(sum.valK), r0(sum.invK), r0(sum.profK), r2(Calc.pct(sum.profK, sum.invK)), r0(sum.priceP), r0(sum.fxP), r2(model.total.valK ? (sum.valK / model.total.valK) * 100 : 0)]
+    ];
+    rows.forEach(({ a, x }) => {
+      const i = x.inst, on = isOn(x), isCash = i.asset_type === 'CASH', isUSD = i.currency === 'USD';
+      out.push([on ? '○' : '×', UI.accBroker(a), UI.accType(a), a.name, i.name, i.symbol, i.exchange,
+        Groups.name(x.group) + (x.unassigned ? ' (미지정)' : ''), i.currency, x.r.q,
+        isCash ? '' : x.r.ap, isUSD ? x.r.fxBuy : '', isCash ? '' : x.r.cp,
+        r0(x.r.valK), r0(x.r.invK), r0(x.r.profK), r2(x.r.retK), r0(x.r.priceP), r0(x.r.fxP),
+        on && sum.valK ? r2((x.r.valK / sum.valK) * 100) : '']);
+    });
+    const usdRow = row => row[8] === 'USD';
+    UI.downloadXlsx(`myAsset_통계분석_${kst().replace(/[-: ]/g, '').slice(0, 12)}.xlsx`, [{
+      name: '통계분석',
+      rows: out,
+      widths: [10, 12, 12, 14, 26, 12, 8, 14, 6, 14, 12, 10, 12, 15, 15, 14, 10, 14, 14, 9],
+      formatFn: (row, c) => (c === 9 ? UI.XF.qty : c === 10 || c === 12 ? (usdRow(row) ? UI.XF.usd : UI.XF.krw) : c === 11 ? UI.XF.fx
+        : c >= 13 && c <= 15 ? UI.XF.krw : c === 16 || c === 19 ? UI.XF.pct : c === 17 || c === 18 ? UI.XF.krw : null)
+    }]);
   }
 
   // 저장 일시 (한국 시간) 2026-10-18 21:05
