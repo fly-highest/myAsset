@@ -22,8 +22,8 @@ const SERIES: { pair: string; google: string | string[] | null; yahoo: string; e
   { pair: 'QQQ', google: 'NASDAQ:QQQ', yahoo: 'QQQ' },
   { pair: 'SPY', google: 'NYSEARCA:SPY', yahoo: 'SPY' },
   // 코스피 · 코스닥 지수 (한국 날짜): GOOGLEFINANCE 표기가 확실하지 않아 후보를 차례로 시도 → 없으면 Yahoo
-  { pair: 'KOSPI', google: ['KRX:KOSPI', 'INDEXKRX:KOSPI'], yahoo: '^KS11' },
-  { pair: 'KOSDAQ', google: ['KRX:KOSDAQ', 'INDEXKRX:KOSDAQ', 'KOSDAQ:KOSDAQ'], yahoo: '^KQ11' },
+  { pair: 'KOSPI', google: ['KOSPI', 'KRX:KS11', 'INDEXKRX:KS11'], yahoo: '^KS11' }, // KRX:KOSPI · INDEXKRX:KOSPI 는 빈칸 (2026-10-18)
+  { pair: 'KOSDAQ', google: ['KOSDAQ', 'KRX:KQ11', 'INDEXKRX:KQ11'], yahoo: '^KQ11' }, // KRX:KOSDAQ 등 3개는 빈칸 (2026-10-18)
   { pair: 'GLD', google: 'NYSEARCA:GLD', yahoo: 'GLD' },
   { pair: 'VIX', google: 'INDEXCBOE:VIX', yahoo: '^VIX' }, // CBOE 변동성 지수
   { pair: 'COPPER', google: null, yahoo: 'HG=F' }, // 구리 선물 (달러/파운드) — 구리/금 비율용

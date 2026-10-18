@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
     // 시장 지표(update-markets)용: QQQ · SPY · GLD · 비트코인 · VIX (달러 인덱스 · WTI · 브렌트유는 GOOGLEFINANCE 가 값을 주지 않아 Yahoo 사용, 2026-10-10 확인)
     // 코스피 · 코스닥 지수: GOOGLEFINANCE 표기 후보 (값이 들어오는 것을 확인해 update-markets 에서 사용)
     const list = ['CURRENCY:USDKRW', 'CURRENCY:XAUUSD', 'NASDAQ:QQQ', 'NYSEARCA:SPY', 'NYSEARCA:GLD', 'CURRENCY:BTCUSD', 'INDEXCBOE:VIX',
-      'KRX:KOSPI', 'INDEXKRX:KOSPI', 'KRX:KOSDAQ', 'INDEXKRX:KOSDAQ', 'KOSDAQ:KOSDAQ',
+      'KOSPI', 'KRX:KS11', 'INDEXKRX:KS11', 'KOSDAQ', 'KRX:KQ11', 'INDEXKRX:KQ11', // 1차 후보(KRX:KOSPI 등 5개)는 2026-10-18 모두 빈칸
       ...targets.filter((t) => t.source === 'GOOGLE' && t.google_ticker).map((t) => t.google_ticker)];
     return new Response(list.join('\n'), { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
   }
