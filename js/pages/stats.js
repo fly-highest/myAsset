@@ -8,7 +8,9 @@
   try { const s = localStorage.getItem(SORT_KEY); if (SORTS.some(x => x[0] === s)) sortBy = s; } catch (e) { /* 무시 */ }
   const st = { filterKey: FILTER_KEY, ...UI.loadFilters(FILTER_KEY) }; // 필터 선택은 이 브라우저에 기억
   // 행 체크박스: 기본은 모두 체크, 체크를 끈 행만 기억 (체크된 행만 맨 위 합계에 더함). 화면을 새로 열면 다시 모두 체크
-  const unchecked = new Set();
+  let unchecked = new Set();
+  // Save · Load: 저장한 체크 상태를 불러오면 다음 그리기에서 그 목록대로 체크 (금액은 불러온 시점 값으로 계산)
+  let pendingChecked = null, loaded = null; // loaded = 지금 화면에 불러온 저장본 { name, saved_at }
   const rowKey = x => (x.holding ? x.holding.id : x.accKey + '|' + x.inst.id);
 
   async function render() {
@@ -27,6 +29,10 @@
     else if (sortBy === 'ret' || sortBy === 'retAsc') rows.sort((p, q) => (sortBy === 'ret' ? 1 : -1) * (q.x.r.retK - p.x.r.retK));
     else if (sortBy === 'group') rows.sort((p, q) => gIdx(p.x.group) - gIdx(q.x.group) || (p.x.unassigned - q.x.unassigned) || q.x.r.valK - p.x.r.valK);
 
+    if (pendingChecked) { // 불러온 저장본: 저장한 목록에 있는 행만 체크
+      unchecked = new Set(rows.map(({ x }) => rowKey(x)).filter(k => !pendingChecked.has(k)));
+      pendingChecked = null;
+    }
     const on = rows.filter(({ x }) => !unchecked.has(rowKey(x)));
     const sum = on.reduce((g, { x }) => Calc.add(g, x.r), Calc.emptyAgg());
     const sv = Calc.view(sum, mode, model.fx);
@@ -64,6 +70,9 @@
             ${filterHtml}
             <label class="small muted" for="s-sort">정렬</label>
             <select id="s-sort" class="inline">${SORTS.map(([k, l]) => `<option value="${k}" ${k === sortBy ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <button type="button" class="btn btn-sm" id="p-save" title="지금 고른 대상(증권사 · 계좌 종류 · 자산군)과 체크한 종목을 이름을 붙여 저장">Save</button>
+            <button type="button" class="btn btn-sm" id="p-load" title="저장해 둔 체크 상태를 불러옵니다 (금액은 지금 시세 기준)">Load</button>
+            ${loaded ? `<span class="tag" title="저장 일시 ${esc(fmtAt(loaded.saved_at))}">불러옴: ${esc(loaded.name)}</span>` : ''}
           </div>
         </div>
         <div class="tbl-wrap stats-wrap"><table class="tbl tree stats-tbl">
@@ -94,11 +103,75 @@
       cb.indeterminate = on.length > 0 && on.length < rows.length;
       cb.onchange = e => { rows.forEach(({ x }) => (e.target.checked ? unchecked.delete(rowKey(x)) : unchecked.add(rowKey(x)))); App.rerender(); };
     });
+    main.querySelector('#p-save').onclick = () => saveDialog(on.map(({ x }) => rowKey(x)), rows.length);
+    main.querySelector('#p-load').onclick = loadDialog;
     main.querySelector('#s-sort').onchange = e => {
       sortBy = e.target.value;
       try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) { /* 무시 */ }
       App.rerender();
     };
+  }
+
+  // 저장 일시 (한국 시간) 2026-10-18 21:05
+  const fmtAt = iso => { const d = new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString(); return d.slice(0, 10) + ' ' + d.slice(11, 16); };
+
+  // [Save]: 이름 · 설명을 붙여 지금 상태(필터 + 체크한 종목)를 서버에 저장. 같은 이름이면 덮어씀
+  async function saveDialog(checkedKeys, total) {
+    const list = await DataService.getStatsPresets();
+    App.modal({
+      title: '체크 상태 저장 (Save)',
+      body: `<div class="form">
+        <div class="small muted">지금 고른 대상(증권사 · 계좌 종류 · 자산군)과 체크한 종목 <b>${checkedKeys.length}/${total}개</b>를 저장합니다. 금액은 저장하지 않고, 불러올 때 그 시점 시세로 다시 계산합니다.</div>
+        <div class="field"><label>이름</label><input type="text" id="sp-name" maxlength="40" value="${esc(loaded ? loaded.name : '')}" placeholder="예: 연금계좌 성장주" autocomplete="off"></div>
+        <div class="field"><label>설명 <span class="muted small">(선택)</span></label><textarea id="sp-desc" maxlength="200" rows="3" placeholder="예: IRP · DC의 나스닥 종목만">${esc(loaded ? loaded.desc || '' : '')}</textarea></div>
+        ${list.length ? `<div class="small muted">같은 이름으로 저장하면 덮어씁니다. 저장된 이름: ${list.map(p => esc(p.name)).join(', ')}</div>` : ''}
+        <div class="notice" id="sp-err" hidden></div></div>`,
+      buttons: [{ label: '취소' }, {
+        label: '저장', kind: 'primary', onClick: async api => {
+          const name = api.body.querySelector('#sp-name').value, desc = api.body.querySelector('#sp-desc').value;
+          try {
+            if (list.some(p => p.name === name.trim()) && !(await App.confirm(`<b>${esc(name.trim())}</b>이(가) 이미 있습니다. 덮어쓸까요?`, { okLabel: '덮어쓰기' }))) return;
+            const saved = await DataService.saveStatsPreset({ name, desc, filters: { brokers: st.brokers, types: st.types, groups: st.groups }, checked: checkedKeys });
+            loaded = { name: saved.name, desc: saved.desc, saved_at: saved.saved_at };
+            api.close();
+            App.toast(`'${saved.name}'으로 저장했습니다 (${checkedKeys.length}개 종목).`);
+          } catch (e) { const el = api.body.querySelector('#sp-err'); el.hidden = false; el.textContent = e.message; }
+        }
+      }]
+    });
+  }
+
+  // [Load]: 저장 목록(이름 · 설명 · 저장 일시) → [불러오기] 하면 그때의 필터와 체크를 되살림 (금액은 지금 시세 기준)
+  async function loadDialog() {
+    const list = (await DataService.getStatsPresets()).sort((a, b) => (a.saved_at < b.saved_at ? 1 : -1));
+    const dlg = App.modal({
+      title: '체크 상태 불러오기 (Load)',
+      body: list.length ? `<div class="sp-list">${list.map(p => `<div class="sp-item">
+          <div class="sp-main"><b>${esc(p.name)}</b> <span class="muted small">저장 ${esc(fmtAt(p.saved_at))} · ${p.checked.length}개 종목</span>
+            ${p.desc ? `<div class="small">${esc(p.desc)}</div>` : ''}</div>
+          <div class="sp-act"><button type="button" class="btn btn-sm btn-primary" data-load="${esc(p.id)}">불러오기</button>
+            <button type="button" class="btn btn-sm btn-ghost-danger" data-del="${esc(p.id)}">삭제</button></div></div>`).join('')}</div>`
+        : '<div class="muted">저장된 체크 상태가 없습니다. 먼저 [Save]로 저장하세요.</div>',
+      buttons: [{ label: '닫기' }]
+    });
+    dlg.body.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
+      const p = list.find(x => x.id === b.dataset.load);
+      ['brokers', 'types', 'groups'].forEach(k => { st[k] = Array.isArray(p.filters && p.filters[k]) ? p.filters[k].slice() : []; });
+      try { localStorage.setItem(FILTER_KEY, JSON.stringify({ brokers: st.brokers, types: st.types, groups: st.groups })); } catch (e) { /* 무시 */ }
+      pendingChecked = new Set(p.checked);
+      loaded = { name: p.name, desc: p.desc, saved_at: p.saved_at };
+      dlg.close();
+      App.toast(`'${p.name}'을 불러왔습니다 (저장 ${fmtAt(p.saved_at)}). 금액은 지금 시세 기준입니다.`);
+      App.rerender();
+    });
+    dlg.body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      const p = list.find(x => x.id === b.dataset.del);
+      if (!(await App.confirm(`<b>${esc(p.name)}</b> 저장본을 지울까요?`, { okLabel: '삭제' }))) return;
+      await DataService.deleteStatsPreset(p.id);
+      if (loaded && loaded.name === p.name) loaded = null;
+      b.closest('.sp-item').remove();
+      App.toast(`'${p.name}'을 지웠습니다.`);
+    });
   }
 
   App.init('stats', render);

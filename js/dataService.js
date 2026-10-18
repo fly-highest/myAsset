@@ -82,6 +82,7 @@ window.DataService = (function () {
     // 잡주 종목코드 변경 (잡주 → 999999): 이미 등록한 브라우저도 맞춰 줌
     state.instruments.forEach(i => { if (i.exchange === 'KRX' && i.symbol === '잡주') { i.symbol = '999999'; i.updated_at = nowISO(); } });
     if (!state.manualPrices) state.manualPrices = {}; // 직접 입력한 현재가 { 종목id: { price, as_of } }
+    if (!state.statsPresets) state.statsPresets = []; // 통계분석 체크 상태 저장 [{ id, name, desc, saved_at, filters, checked }]
   }
   // 기본 증권사 목록에 나중에 추가한 항목을, 이미 쓰고 있는 브라우저에도 한 번만 넣어 줍니다.
   // (사용자가 지운 항목이 다시 생기지 않도록 넣은 항목을 meta.addedBrokers 에 기록)
@@ -269,6 +270,22 @@ window.DataService = (function () {
     }
     commit();
   }
+  // ---- 통계분석: 체크한 종목 상태 저장 · 불러오기 (금액은 저장하지 않음 — 불러올 때 그 시점 값으로 계산) ----
+  async function getStatsPresets() { return clone(state.statsPresets || []); }
+  // 같은 이름이 있으면 덮어씀
+  async function saveStatsPreset({ name, desc, filters, checked }) {
+    name = String(name || '').trim(); desc = String(desc || '').trim();
+    if (!name) throw fail('저장할 이름을 입력해 주세요.');
+    if (name.length > 40) throw fail('이름은 40자까지 입력할 수 있습니다.');
+    if (desc.length > 200) throw fail('설명은 200자까지 입력할 수 있습니다.');
+    const list = state.statsPresets || (state.statsPresets = []);
+    const old = list.find(p => p.name === name);
+    const item = { id: old ? old.id : uid('sp'), name, desc, saved_at: nowISO(), filters: clone(filters || {}), checked: [...new Set(checked || [])] };
+    if (old) Object.assign(old, item); else list.push(item);
+    commit();
+    return clone(item);
+  }
+  async function deleteStatsPreset(id) { state.statsPresets = (state.statsPresets || []).filter(p => p.id !== id); commit(); }
   async function getManualPrice(instrumentId) {
     return state.manualPrices[instrumentId] ? clone(state.manualPrices[instrumentId]) : null;
   }
@@ -1455,6 +1472,7 @@ window.DataService = (function () {
     updateInstrumentAttrs,
     getHoldings, addHolding, updateHolding, deleteHolding,
     getPrices, getFxRate, getFxHistory, getGoldRate, xauOn, getPriceMeta, getPriceStatus, refreshPrices, getQqqSignal, setManualPrice, getManualPrice,
+    getStatsPresets, saveStatsPreset, deleteStatsPreset,
     getSnapshots, getSnapshotItems, createDailySnapshot, startRealHistory, autoDailySnapshot, ensureHistory,
     parseHoldingsXlsx, validateImport, previewImport, replaceCurrentHoldings, undoLastImport,
     exportHoldingsXlsx, downloadSampleXlsx, downloadTemplateXlsx, downloadIssuesXlsx,
