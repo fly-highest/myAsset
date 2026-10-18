@@ -7,10 +7,14 @@
   let sortBy = 'default';
   try { const s = localStorage.getItem(SORT_KEY); if (SORTS.some(x => x[0] === s)) sortBy = s; } catch (e) { /* 무시 */ }
   const st = { filterKey: FILTER_KEY, ...UI.loadFilters(FILTER_KEY) }; // 필터 선택은 이 브라우저에 기억
-  // 행 체크박스: 기본은 모두 체크, 체크를 끈 행만 기억 (체크된 행만 맨 위 합계에 더함). 화면을 새로 열면 다시 모두 체크
-  let unchecked = new Set();
+  // 행 체크박스: 기본은 모두 체크, 체크를 끈 행만 기억 (체크된 행만 맨 위 합계에 더함). 다른 화면에 다녀오거나 새로고침해도 유지 (아래 CHECK_KEY)
+  // 체크 상태(끈 행 · 불러온 저장본 이름)는 다른 화면에 다녀오거나 새로고침해도 유지 — 이 브라우저에 기억
+  const CHECK_KEY = 'myAsset.stats.check';
+  let unchecked = new Set(), loaded = null;
+  try { const s = JSON.parse(localStorage.getItem(CHECK_KEY)); if (s && Array.isArray(s.unchecked)) { unchecked = new Set(s.unchecked.map(String)); loaded = s.loaded || null; } } catch (e) { /* 무시 */ }
+  const saveCheck = () => { try { localStorage.setItem(CHECK_KEY, JSON.stringify({ unchecked: [...unchecked], loaded })); } catch (e) { /* 무시 */ } };
   // Save · Load: 저장한 체크 상태를 불러오면 다음 그리기에서 그 목록대로 체크 (금액은 불러온 시점 값으로 계산)
-  let pendingChecked = null, loaded = null; // loaded = 지금 화면에 불러온 저장본 { name, saved_at }
+  let pendingChecked = null; // 불러온 저장본의 체크 목록 (다음 그리기에서 반영). loaded = 지금 화면에 불러온 저장본 { name, desc, saved_at }
   const rowKey = x => (x.holding ? x.holding.id : x.accKey + '|' + x.inst.id);
 
   async function render() {
@@ -89,7 +93,7 @@
             ${body || '<tr><td colspan="16" class="muted center">고른 조건에 맞는 종목이 없습니다.</td></tr>'}
           </tbody>
         </table></div>
-        <p class="small muted">합계 행의 비중 = 전체 자산 대비, 종목 행의 비중 = 체크한 종목 합계 대비. 맨 왼쪽 체크를 끈 행은 합계에서 빠집니다 (화면을 새로 열면 다시 모두 체크). 자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.</p>
+        <p class="small muted">합계 행의 비중 = 전체 자산 대비, 종목 행의 비중 = 체크한 종목 합계 대비. 맨 왼쪽 체크를 끈 행은 합계에서 빠집니다 (체크 상태는 다른 화면에 다녀와도 유지). 자산군을 클릭하면 자산 현황의 해당 위치로 이동합니다.</p>
       </div>`;
     UI.bindFilters(main, st);
     // 표 안 스크롤 없이 페이지와 함께 스크롤: 머리글 · 합계 행은 맨 위 메뉴 줄 바로 아래에 붙음
@@ -103,6 +107,7 @@
       cb.indeterminate = on.length > 0 && on.length < rows.length;
       cb.onchange = e => { rows.forEach(({ x }) => (e.target.checked ? unchecked.delete(rowKey(x)) : unchecked.add(rowKey(x)))); App.rerender(); };
     });
+    saveCheck(); // 지금 체크 상태 기억 (다른 화면에 다녀와도 유지)
     main.querySelector('#p-save').onclick = () => saveDialog(on.map(({ x }) => rowKey(x)), rows.length);
     main.querySelector('#p-load').onclick = loadDialog;
     main.querySelector('#s-sort').onchange = e => {
@@ -132,7 +137,7 @@
           try {
             if (list.some(p => p.name === name.trim()) && !(await App.confirm(`<b>${esc(name.trim())}</b>이(가) 이미 있습니다. 덮어쓸까요?`, { okLabel: '덮어쓰기' }))) return;
             const saved = await DataService.saveStatsPreset({ name, desc, filters: { brokers: st.brokers, types: st.types, groups: st.groups }, checked: checkedKeys });
-            loaded = { name: saved.name, desc: saved.desc, saved_at: saved.saved_at };
+            loaded = { name: saved.name, desc: saved.desc, saved_at: saved.saved_at }; saveCheck();
             api.close();
             App.toast(`'${saved.name}'으로 저장했습니다 (${checkedKeys.length}개 종목).`);
           } catch (e) { const el = api.body.querySelector('#sp-err'); el.hidden = false; el.textContent = e.message; }
@@ -188,7 +193,7 @@
           const wasLoaded = loaded && loaded.name === p.name;
           const up = await DataService.updateStatsPreset(id, { name: box.querySelector('.sp-e-name').value, desc: box.querySelector('.sp-e-desc').value });
           list = list.map(x => (x.id === id ? up : x));
-          if (wasLoaded) loaded = { ...loaded, name: up.name, desc: up.desc };
+          if (wasLoaded) loaded = { ...loaded, name: up.name, desc: up.desc }; saveCheck();
           box.innerHTML = view(up);
           App.toast(`'${up.name}'으로 고쳤습니다.`);
         } catch (err) { const el = box.querySelector('.sp-e-err'); el.hidden = false; el.textContent = err.message; }
@@ -196,7 +201,7 @@
         if (!(await App.confirm(`<b>${esc(p.name)}</b> 저장본을 지울까요?`, { okLabel: '삭제' }))) return;
         await DataService.deleteStatsPreset(p.id);
         list = list.filter(x => x.id !== id);
-        if (loaded && loaded.name === p.name) loaded = null;
+        if (loaded && loaded.name === p.name) loaded = null; saveCheck();
         itemOf(id).remove();
         App.toast(`'${p.name}'을 지웠습니다.`);
       }
