@@ -109,6 +109,18 @@
     return m.ma.slice();
   }
   const saveMa = (m, sel) => { try { localStorage.setItem(MA_KEY(m.id), JSON.stringify(sel)); } catch (e) { /* 무시 */ } };
+  // 사용자가 [⚙ 설정]에서 추가한 이동평균 (차트마다 따로, 이 브라우저에 기억): [키, 이름, 길이, 색]
+  //   키 n{일수} = 최근 n개 자료(거래일) 평균, ym{개월수} = 날짜마다 그 기간 전까지의 평균 (기본 1년·3년·5년과 같은 방식)
+  const MAC_KEY = id => 'myAsset.market.maCustom.' + id;
+  function maCustom(m) {
+    try {
+      const s = JSON.parse(localStorage.getItem(MAC_KEY(m.id)));
+      if (Array.isArray(s)) return s.filter(o => Array.isArray(o) && /^(n|ym)\d+$/.test(o[0]) && o[2] > 0 && /^#[0-9a-f]{6}$/i.test(o[3]));
+    } catch (e) { /* 무시 */ }
+    return [];
+  }
+  const saveMaCustom = (m, list) => { try { localStorage.setItem(MAC_KEY(m.id), JSON.stringify(list)); } catch (e) { /* 무시 */ } };
+  const maOpts = m => [...MA_OPTS, ...maCustom(m).filter(c => !MA_OPTS.some(o => o[0] === c[0]))];
 
   // n개 단순 이동평균. 앞쪽에 n개가 안 되는 날은 null
   const smaN = (hist, n) => { let sum = 0; return hist.map((r, i) => { sum += r.close; if (i >= n) sum -= hist[i - n].close; return i >= n - 1 ? sum / n : null; }); };
@@ -123,7 +135,7 @@
       return hist[0].date <= s ? sum / (i - j + 1) : null;
     });
   }
-  const maValues = (hist, key) => { const o = MA_OPTS.find(x => x[0] === key); return key[0] === 'n' ? smaN(hist, o[2]) : smaMonths(hist, o[2]); };
+  const maValues = (hist, key, m) => { const o = maOpts(m).find(x => x[0] === key); if (!o) return hist.map(() => null); return key[0] === 'n' ? smaN(hist, o[2]) : smaMonths(hist, o[2]); };
 
   // 표시 구간(기간 버튼)의 자료 + 기간 단순 평균·최고·최저
   function seriesCalc(hist, p) {
@@ -161,9 +173,86 @@
   // 이동평균 체크박스: 차트 오른쪽 위에 작게 고정
   function maPicker(m, sel) {
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
-    return `<div class="ma-picks"><span class="ma-title">이동평균</span>
-      ${MA_OPTS.map(([k, l, , c]) => box(k, l, c)).join('')}
+    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><span class="ma-title">이동평균</span>
+      ${maOpts(m).map(([k, l, , c]) => box(k, l, c)).join('')}
       ${m.band ? box('band', '200일 ±1%', BAND) : ''}</div>`;
+  }
+
+  // [⚙ 설정] 팝업: 지금 고른 이동평균을 체크박스로 보여 주고, 원하는 기간(숫자 + 일·개월·년)과 색(#RRGGBB)으로 새 이동평균 추가
+  //   [적용]을 눌러야 저장 (이 차트에만, 이 브라우저에 기억). 기본 이동평균(5일~5년)은 지울 수 없고 추가한 것만 지움
+  const MA_PALETTE = ['#0ea5e9', '#a855f7', '#ef4444', '#22c55e', '#f97316', '#14b8a6', '#e11d48', '#64748b', '#84cc16', '#6366f1'];
+  function maDialog(m, done) {
+    let custom = maCustom(m);
+    let sel = maSelected(m).filter(k => k === 'band' || maOpts(m).some(o => o[0] === k));
+    const opts = () => [...MA_OPTS, ...custom.filter(c => !MA_OPTS.some(o => o[0] === c[0]))];
+    const nextColor = () => MA_PALETTE.find(c => !opts().some(o => o[3].toLowerCase() === c)) || MA_PALETTE[custom.length % MA_PALETTE.length];
+    const list = () => opts().map(([k, l, , c]) => {
+      const mine = custom.some(x => x[0] === k);
+      return `<div class="ma-row"><label class="check"><input type="checkbox" data-k="${k}" ${sel.includes(k) ? 'checked' : ''}>
+        <span class="ma-swatch" style="background:${c}"></span>${l} 평균${mine ? ' <span class="muted small">(추가)</span>' : ''}</label>
+        ${mine ? `<button type="button" class="btn btn-sm btn-ghost-danger" data-del="${k}">삭제</button>` : ''}</div>`;
+    }).join('') + (m.band ? `<div class="ma-row"><label class="check"><input type="checkbox" data-k="band" ${sel.includes('band') ? 'checked' : ''}>
+        <span class="ma-swatch" style="background:${BAND}"></span>200일 ±1% 띠</label></div>` : '');
+    const color0 = nextColor();
+    const dlg = App.modal({
+      title: `이동평균 설정 — ${esc(m.title.split(' · ')[0])}`,
+      body: `<div class="form">
+        <div class="small muted">체크한 이동평균을 차트에 그립니다. 일 = 최근 n개 자료(거래일) 평균, 개월·년 = 날짜마다 그 기간 전까지의 평균.</div>
+        <div id="ma-list" class="ma-list">${list()}</div>
+        <div class="field"><label>이동평균 추가</label>
+          <div class="toolbar">
+            <input type="text" id="ma-n" inputmode="numeric" placeholder="숫자 (예: 60)" style="width:110px" autocomplete="off">
+            <select id="ma-u" class="inline"><option value="n">일</option><option value="m">개월</option><option value="y">년</option></select>
+            <input type="text" id="ma-c" value="${color0}" placeholder="#RRGGBB" style="width:100px" maxlength="7" autocomplete="off" title="색: #과 6자리 (예: #0ea5e9)">
+            <input type="color" id="ma-cp" value="${color0}" title="색 고르기" style="width:36px;height:32px;padding:0;border:0;background:none">
+            <button type="button" class="btn btn-sm btn-primary" id="ma-add">추가</button>
+          </div></div>
+        <div class="notice" id="ma-err" hidden></div></div>`,
+      buttons: [{ label: '취소' }, {
+        label: '적용', kind: 'primary', onClick: api => {
+          sel = [...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
+          saveMaCustom(m, custom);
+          saveMa(m, sel);
+          api.close();
+          done();
+        }
+      }]
+    });
+    const body = dlg.body;
+    const err = msg => { const e = body.querySelector('#ma-err'); e.hidden = !msg; e.textContent = msg || ''; };
+    const redraw = () => {
+      sel = [...body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k).concat(sel.filter(k => !body.querySelector(`[data-k="${k}"]`)));
+      body.querySelector('#ma-list').innerHTML = list();
+      bindDel();
+    };
+    const bindDel = () => body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+      custom = custom.filter(x => x[0] !== b.dataset.del); sel = sel.filter(k => k !== b.dataset.del);
+      body.querySelector(`[data-k="${b.dataset.del}"]`).checked = false; redraw();
+    });
+    bindDel();
+    const cText = body.querySelector('#ma-c'), cPick = body.querySelector('#ma-cp');
+    cPick.oninput = () => { cText.value = cPick.value; };
+    cText.oninput = () => { if (/^#[0-9a-f]{6}$/i.test(cText.value.trim())) cPick.value = cText.value.trim(); };
+    body.querySelector('#ma-add').onclick = () => {
+      const n = Number(body.querySelector('#ma-n').value.replace(/[,\s]/g, ''));
+      const u = body.querySelector('#ma-u').value;
+      const c = cText.value.trim().toLowerCase();
+      if (!Number.isInteger(n) || n < (u === 'n' ? 2 : 1) || n > (u === 'n' ? 5000 : u === 'm' ? 600 : 50)) return err(u === 'n' ? '일수는 2~5000 사이 정수로 입력하세요.' : u === 'm' ? '개월은 1~600 사이 정수로 입력하세요.' : '년은 1~50 사이 정수로 입력하세요.');
+      if (!/^#[0-9a-f]{6}$/.test(c)) return err('색은 # 다음에 0~9, a~f 6자리로 입력하세요 (예: #0ea5e9).');
+      const months = u === 'y' ? n * 12 : n;
+      const key = u === 'n' ? 'n' + n : 'ym' + months;
+      // 같은 기간이 이미 있으면 추가하지 않음 (기본 1년·3년·5년 = 12·36·60개월 포함)
+      const same = opts().find(o => o[0] === key || (u !== 'n' && o[0][0] === 'y' && o[2] === months));
+      if (same) return err(`${same[1]} 평균이 이미 있습니다. 목록에서 체크하세요.`);
+      const label = u === 'n' ? `${n}일` : u === 'y' ? `${n}년` : months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
+      custom.push([key, label, u === 'n' ? n : months, c]);
+      if (!sel.includes(key)) sel.push(key);
+      err('');
+      body.querySelector('#ma-n').value = '';
+      redraw();
+      body.querySelector(`[data-k="${key}"]`).checked = true;
+      const nc = nextColor(); cText.value = nc; cPick.value = nc;
+    };
   }
 
   // 차트별 표시 기간: 위쪽 버튼과 같은 목록(1주~10년) + '최대'(저장된 전체). 고르면 그 차트만 바뀌고 이 브라우저에 기억
@@ -230,8 +319,8 @@
     data.forEach(({ s, hist, cur }) => {
       if (!cur || !hist.length) return;
       if (m.alertWhen) { const msg = m.alertWhen(cur.v); if (msg) below.push(msg); return; } // 이동평균 대신 정해진 조건으로만 깜빡임
-      MA_OPTS.filter(o => sel.includes(o[0])).forEach(([k, l]) => {
-        const v = maValues(hist, k)[hist.length - 1];
+      maOpts(m).filter(o => sel.includes(o[0])).forEach(([k, l]) => {
+        const v = maValues(hist, k, m)[hist.length - 1];
         if (v != null && (m.alertAbove ? cur.v > v : cur.v < v)) below.push(`${m.series.length > 1 ? s.label + ' ' : ''}현재 ${m.fmt(cur.v)} ${m.alertAbove ? '>' : '<'} ${l} 평균 ${m.fmt(v)}`);
       });
     });
@@ -246,6 +335,7 @@
       setChartPeriod(m, b.dataset.cp);
       marketPanel(m, pTop);
     });
+    box.querySelector('[data-ma-cfg]').onclick = () => maDialog(m, () => marketPanel(m, pTop));
 
     // 차트: 여러 지표(WTI·브렌트유)는 날짜를 합쳐 한 차트에 그림
     const labels = [...new Set(data.flatMap(d => d.c.rows.map(r => r.date)))].sort();
@@ -258,8 +348,8 @@
       // 선택 기간 안의 최고 · 최저 지점 표시 (값 · 날짜는 EXTREME_LABELS 플러그인이 글자로 그림)
       if (c.hiRow && c.loRow) datasets.push({ label: '', data: labels.map(d => (d === c.hiRow.date ? c.hiRow.close : d === c.loRow.date ? c.loRow.close : null)), showLine: false,
         pointRadius: 4, pointHoverRadius: 4, pointBackgroundColor: '#fff', pointBorderColor: s.color, pointBorderWidth: 2, extremes: { hi: c.hiRow, lo: c.loRow, multi: m.series.length > 1 ? s.label + ' ' : '' } });
-      MA_OPTS.filter(o => sel.includes(o[0])).forEach(([k, l, , color]) => {
-        datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, maValues(hist, k)), borderColor: color, borderWidth: 1.4,
+      maOpts(m).filter(o => sel.includes(o[0])).forEach(([k, l, , color]) => {
+        datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, maValues(hist, k, m)), borderColor: color, borderWidth: 1.4,
           borderDash: si > 0 ? [2, 3] : (k[0] === 'y' ? [6, 4] : []), pointRadius: 0, tension: 0.1, spanGaps: true });
       });
       if (m.band && sel.includes('band')) {

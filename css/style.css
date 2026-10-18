@@ -406,3 +406,8 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .page-wrap { overflow: visible; }
 .page-wrap thead th { top: var(--hdr-h, 0px); }
 .page-wrap .sum-row td { position: sticky; top: calc(var(--hdr-h, 0px) + var(--th-h, 37px)); z-index: 2; background: #f8f9fb; font-weight: 700; border-bottom: 2px solid #c9d6f0; }
+/* 시장 지표: 이동평균 [⚙ 설정] 버튼 · 팝업 목록 */
+.ma-cfg { border: 1px solid #cfd5df; background: #fff; border-radius: 6px; padding: 1px 7px; font: inherit; font-size: 12px; cursor: pointer; margin-right: 6px; }
+.ma-cfg:hover { border-color: var(--primary); color: var(--primary); }
+.ma-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; margin: 6px 0 4px; }
+.ma-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
