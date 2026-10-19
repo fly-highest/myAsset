@@ -3,6 +3,10 @@
   let range = '3M'; // 'CUSTOM' 이면 custom.from ~ custom.to
   let custom = { from: '', to: '' };
   let lastView = null; // 엑셀 다운로드용 최근 화면 데이터
+  // 날짜별 표 묶음: 'group' = 자산군별(지금 표 그대로) · 'broker' = 증권사별 — 이 브라우저에 기억
+  const DIMH_KEY = 'myAsset.history.dim';
+  let dimH = 'group';
+  try { if (localStorage.getItem(DIMH_KEY) === 'broker') dimH = 'broker'; } catch (e) { /* 무시 */ }
   const RANGES = [['1W', '1주'], ['1M', '1개월'], ['3M', '3개월'], ['6M', '6개월'], ['1Y', '1년'], ['ALL', '전체']];
   const modelCache = new Map();
   // 스냅샷 모델 캐시: 같은 id 라도 다시 만든 스냅샷(생성 시각·금시세가 다름)은 새로 계산, 항목이 비어 있으면 저장하지 않음
@@ -36,7 +40,29 @@
       const asOf = ps.latestAsOf ? Fmt.mdhm(ps.latestAsOf) : '';
       entries.unshift({ label: today, sub: asOf ? '시세 ' + asOf : '', tag: '현재 · 저장 전', model: now });
     }
-    const table = UI.statusTable(entries, mode, { empty: '스냅샷이 없습니다', drawdown: true });
+    // 날짜별 표의 묶음: 자산군별(기본) / 증권사별(증권사를 열로) — 이 브라우저에 기억
+    let table;
+    if (dimH === 'broker') {
+      const [accs, brokers] = await Promise.all([DataService.getAccounts(), DataService.getBrokers()]);
+      const brokerOf = Object.fromEntries(accs.map(a => [a.id, a.broker || '(증권사 없음)']));
+      const GONE = '(삭제된 계좌)'; // 이력에는 계좌 id 만 있어 지금 계좌 목록으로 증권사를 찾음 — 그 뒤 지운 계좌는 여기로
+      const accIdOf = x => (x.item ? x.item.account_id : x.holding ? x.holding.account_id : null);
+      const used = new Set();
+      const byBroker = entries.map(e => {
+        const groups = {};
+        e.model.rows.forEach(x => {
+          const b = brokerOf[accIdOf(x)] || GONE;
+          used.add(b);
+          (groups[b] || (groups[b] = { code: b, agg: Calc.emptyAgg() })).agg = Calc.add(groups[b].agg, x.r);
+        });
+        return { ...e, groups };
+      });
+      const order = [...brokers.map(b => b.name), '(증권사 없음)', GONE].filter(n => used.has(n));
+      const PAL = ['#2457d6', '#e11d48', '#16a34a', '#f59e0b', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#64748b'];
+      const list = order.map((n, i) => ({ code: n, name: n, color: PAL[i % PAL.length] }));
+      table = UI.statusTable(byBroker.map(e => { list.forEach(g => { if (!e.groups[g.code]) e.groups[g.code] = { code: g.code, agg: Calc.emptyAgg() }; }); return { ...e, model: { ...e.model, groups: e.groups } }; }),
+        mode, { empty: '스냅샷이 없습니다', drawdown: true, list, dimLabel: '증권사' });
+    } else table = UI.statusTable(entries, mode, { empty: '스냅샷이 없습니다', drawdown: true });
 
     document.getElementById('main').innerHTML = `
       <div class="page-hd">
@@ -60,12 +86,13 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><span class="small muted">자산군은 당시 분류 · 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산 4개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><div class="seg" role="group" aria-label="표 묶음">${[['group', '자산군별'], ['broker', '증권사별']].map(([k, l]) => `<button type="button" data-dimh="${k}" class="${k === dimH ? 'on' : ''}">${l}</button>`).join('')}</div><span class="small muted">${dimH === 'broker' ? '증권사는 지금 계좌 목록 기준 ·' : '자산군은 당시 분류 ·'} 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산 4개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
         ${table}
       </div>`;
 
     const main = document.getElementById('main');
     main.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { range = b.dataset.range; App.rerender(); });
+    main.querySelectorAll('[data-dimh]').forEach(b => b.onclick = () => { dimH = b.dataset.dimh; try { localStorage.setItem(DIMH_KEY, dimH); } catch (e) { /* 무시 */ } App.rerender(); });
     // 날짜 칸: 숫자를 직접 입력(예: 20260901 → 2026-09-01)하고 Enter 또는 칸 밖을 누르면 적용, 달력 버튼으로도 선택 가능
     const applyDates = () => {
       const fEl = main.querySelector('#d-from'), tEl = main.querySelector('#d-to');
