@@ -22,6 +22,31 @@
     return modelCache.get(key);
   }
 
+  // 증권사별 묶음 (화면 '증권사별' 표 · 엑셀 '증권사별' 탭 공용)
+  //   이력에는 계좌 id 만 있어 지금 계좌 목록으로 증권사를 찾음 — 그 뒤 지운 계좌는 '(삭제된 계좌)'
+  async function brokerDim(models) {
+    const [accs, brokers] = await Promise.all([DataService.getAccounts(), DataService.getBrokers()]);
+    const brokerOf = Object.fromEntries(accs.map(a => [a.id, a.broker || '(증권사 없음)']));
+    const GONE = '(삭제된 계좌)';
+    const accIdOf = x => (x.item ? x.item.account_id : x.holding ? x.holding.account_id : null);
+    const used = new Set();
+    const per = models.map(m => {
+      const groups = {};
+      m.rows.forEach(x => {
+        const b = brokerOf[accIdOf(x)] || GONE;
+        used.add(b);
+        if (!groups[b]) groups[b] = { code: b, agg: Calc.emptyAgg() };
+        Calc.add(groups[b].agg, x.r);
+      });
+      return groups;
+    });
+    const order = [...brokers.map(b => b.name), '(증권사 없음)', GONE].filter(n => used.has(n));
+    const PAL = ['#2457d6', '#e11d48', '#16a34a', '#f59e0b', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#64748b'];
+    const list = order.map((n, i) => ({ code: n, name: n, color: PAL[i % PAL.length] }));
+    per.forEach(g => list.forEach(l => { if (!g[l.code]) g[l.code] = { code: l.code, agg: Calc.emptyAgg() }; }));
+    return { list, groups: per }; // groups[i] = models[i] 의 증권사별 { 이름: { agg } }
+  }
+
   async function render() {
     const mode = App.mode;
     const [status, snaps] = await Promise.all([DataService.getStatus(), DataService.getSnapshots(range === 'CUSTOM' ? custom : range)]);
@@ -43,25 +68,8 @@
     // 날짜별 표의 묶음: 자산군별(기본) / 증권사별(증권사를 열로) — 이 브라우저에 기억
     let table;
     if (dimH === 'broker') {
-      const [accs, brokers] = await Promise.all([DataService.getAccounts(), DataService.getBrokers()]);
-      const brokerOf = Object.fromEntries(accs.map(a => [a.id, a.broker || '(증권사 없음)']));
-      const GONE = '(삭제된 계좌)'; // 이력에는 계좌 id 만 있어 지금 계좌 목록으로 증권사를 찾음 — 그 뒤 지운 계좌는 여기로
-      const accIdOf = x => (x.item ? x.item.account_id : x.holding ? x.holding.account_id : null);
-      const used = new Set();
-      const byBroker = entries.map(e => {
-        const groups = {};
-        e.model.rows.forEach(x => {
-          const b = brokerOf[accIdOf(x)] || GONE;
-          used.add(b);
-          (groups[b] || (groups[b] = { code: b, agg: Calc.emptyAgg() })).agg = Calc.add(groups[b].agg, x.r);
-        });
-        return { ...e, groups };
-      });
-      const order = [...brokers.map(b => b.name), '(증권사 없음)', GONE].filter(n => used.has(n));
-      const PAL = ['#2457d6', '#e11d48', '#16a34a', '#f59e0b', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#64748b'];
-      const list = order.map((n, i) => ({ code: n, name: n, color: PAL[i % PAL.length] }));
-      table = UI.statusTable(byBroker.map(e => { list.forEach(g => { if (!e.groups[g.code]) e.groups[g.code] = { code: g.code, agg: Calc.emptyAgg() }; }); return { ...e, model: { ...e.model, groups: e.groups } }; }),
-        mode, { empty: '스냅샷이 없습니다', drawdown: true, list, dimLabel: '증권사' });
+      const bd = await brokerDim(entries.map(e => e.model));
+      table = UI.statusTable(entries.map((e, i) => ({ ...e, model: { ...e.model, groups: bd.groups[i] } })), mode, { empty: '스냅샷이 없습니다', drawdown: true, list: bd.list, dimLabel: '증권사' });
     } else table = UI.statusTable(entries, mode, { empty: '스냅샷이 없습니다', drawdown: true });
 
     document.getElementById('main').innerHTML = `
@@ -86,7 +94,7 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><div class="seg" role="group" aria-label="표 묶음">${[['group', '자산군별'], ['broker', '증권사별']].map(([k, l]) => `<button type="button" data-dimh="${k}" class="${k === dimH ? 'on' : ''}">${l}</button>`).join('')}</div><span class="small muted">${dimH === 'broker' ? '증권사는 지금 계좌 목록 기준 ·' : '자산군은 당시 분류 ·'} 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산 4개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><div class="seg" role="group" aria-label="표 묶음">${[['group', '자산군별'], ['broker', '증권사별']].map(([k, l]) => `<button type="button" data-dimh="${k}" class="${k === dimH ? 'on' : ''}">${l}</button>`).join('')}</div><span class="small muted">${dimH === 'broker' ? '증권사는 지금 계좌 목록 기준 ·' : '자산군은 당시 분류 ·'} 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산·증권사별 5개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
         ${table}
       </div>`;
 
@@ -158,9 +166,9 @@
     return !isNaN(d) && d.toISOString().slice(0, 10) === s;
   }
 
-  // 엑셀: 화면의 통화 버튼과 관계없이 3개 탭(원화환산 / 달러환산 / 통화별)을 한 파일로
+  // 엑셀: 화면의 버튼과 관계없이 5개 탭(원화환산 / 달러환산 / 통화별 / 금환산 / 증권사별)을 한 파일로
   // 각 탭 = 1~2행 기준정보 + '날짜별 자산 현황' 표 (지금 선택한 기간, 최근 날짜가 위)
-  function exportXlsx() {
+  async function exportXlsx() {
     const { snaps, models, fromVal, toVal } = lastView;
     if (!snaps.length) { App.toast('내려받을 스냅샷이 없습니다.', 'error'); return; }
     const F = UI.XF, r2 = v => Math.round(v * 100) / 100;
@@ -210,11 +218,24 @@
       return null;
     };
     const widths = [11, 6, 9, 15, 15, 14, 11, 12, ...gNames.map(() => 14), ...gNames.map(() => 11)];
+    // 증권사별 탭 (원화 환산): 날짜마다 증권사 총액 · 비중 — 증권사는 지금 계좌 목록 기준
+    const bd = await brokerDim(ordered.map(o => o.m));
+    const bNames = bd.list.map(b => b.name);
+    const bRows = [[`[증권사별] 금액 = 원화(₩) · 비중 = 원화 환산 기준 전체 대비 · 증권사는 지금 계좌 목록 기준 (그 뒤 지운 계좌는 '(삭제된 계좌)')`], [info],
+      ['날짜', '시각', '표시 통화', '총 평가금액', '총 투자금액', '총 손익', '총 수익률(%)', '환율(USD/KRW)', ...bNames.map(n => `${n} 총액`), ...bNames.map(n => `${n} 비중(%)`)]];
+    ordered.forEach(({ s, m }, i) => {
+      const t = m.total, g = bd.groups[i];
+      bRows.push([s.snapshot_date, s.snapshot_time, 'KRW(₩)', Math.round(t.valK), Math.round(t.invK), Math.round(t.valK - t.invK), r2(pct(t.valK - t.invK, t.invK)), m.fx,
+        ...bd.list.map(b => Math.round(g[b.code].agg.valK)), ...bd.list.map(b => r2(pct(g[b.code].agg.valK, t.valK)))]);
+    });
+    const nB = bNames.length;
+    const bFormat = (row, c) => (row[2] !== 'KRW(₩)' ? null : (c >= 3 && c <= 5) || (c >= 8 && c < 8 + nB) ? F.krw : c === 6 || c >= 8 + nB ? F.pct : c === 7 ? F.fx : null);
     UI.downloadXlsx(`myAsset_이력_${fromVal}_${toVal}.xlsx`, [
       { name: '원화환산', rows: sheet('KRW', '원화환산'), widths, formatFn },
       { name: '달러환산', rows: sheet('USD', '달러환산'), widths, formatFn },
       { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn },
-      { name: '금환산', rows: sheet('GOLD', '금환산'), widths: [...widths, 14], formatFn }
+      { name: '금환산', rows: sheet('GOLD', '금환산'), widths: [...widths, 14], formatFn },
+      { name: '증권사별', rows: bRows, widths: [11, 6, 9, 15, 15, 14, 11, 12, ...bNames.map(() => 15), ...bNames.map(() => 12)], formatFn: bFormat }
     ]);
   }
 
