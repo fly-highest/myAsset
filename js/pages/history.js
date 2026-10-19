@@ -110,7 +110,7 @@
           : '<div class="chart-box"><canvas id="ch-share"></canvas></div>'}</div>
       </div>
       <div class="sec">
-        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><div class="seg" role="group" aria-label="표 묶음">${[['group', '자산군별'], ['broker', '증권사별'], ['account', '증권사/계좌별']].map(([k, l]) => `<button type="button" data-dimh="${k}" class="${k === dimH ? 'on' : ''}">${l}</button>`).join('')}</div><span class="small muted">${dimH !== 'group' ? '증권사는 지금 계좌 목록 기준 ·' : '자산군은 당시 분류 ·'} 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산·증권사별 5개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
+        <div class="sec-hd"><h2>날짜별 자산 현황</h2><div class="toolbar"><div class="seg" role="group" aria-label="표 묶음">${[['group', '자산군별'], ['broker', '증권사별'], ['account', '증권사/계좌별']].map(([k, l]) => `<button type="button" data-dimh="${k}" class="${k === dimH ? 'on' : ''}">${l}</button>`).join('')}</div><span class="small muted">${dimH !== 'group' ? '증권사는 지금 계좌 목록 기준 ·' : '자산군은 당시 분류 ·'} 비중은 ${mode === 'MIXED' ? '통화별 자산 안에서의 비중' : '원화 환산 기준'}</span><button type="button" class="btn btn-sm" id="btn-xlsx" title="지금 선택한 기간의 표를 원화환산·달러환산·통화별·금환산·증권사별·증권사·계좌별 6개 탭으로 내려받습니다">엑셀 다운로드</button></div></div>
         ${table}
       </div>`;
 
@@ -182,7 +182,7 @@
     return !isNaN(d) && d.toISOString().slice(0, 10) === s;
   }
 
-  // 엑셀: 화면의 버튼과 관계없이 5개 탭(원화환산 / 달러환산 / 통화별 / 금환산 / 증권사별)을 한 파일로
+  // 엑셀: 화면의 버튼과 관계없이 6개 탭(원화환산 / 달러환산 / 통화별 / 금환산 / 증권사별 / 증권사·계좌별)을 한 파일로
   // 각 탭 = 1~2행 기준정보 + '날짜별 자산 현황' 표 (지금 선택한 기간, 최근 날짜가 위)
   async function exportXlsx() {
     const { snaps, models, fromVal, toVal } = lastView;
@@ -234,24 +234,31 @@
       return null;
     };
     const widths = [11, 6, 9, 15, 15, 14, 11, 12, ...gNames.map(() => 14), ...gNames.map(() => 11)];
-    // 증권사별 탭 (원화 환산): 날짜마다 증권사 총액 · 비중 — 증권사는 지금 계좌 목록 기준
-    const bd = await brokerDim(ordered.map(o => o.m));
-    const bNames = bd.list.map(b => b.name);
-    const bRows = [[`[증권사별] 금액 = 원화(₩) · 비중 = 원화 환산 기준 전체 대비 · 증권사는 지금 계좌 목록 기준 (그 뒤 지운 계좌는 '(삭제된 계좌)')`], [info],
-      ['날짜', '시각', '표시 통화', '총 평가금액', '총 투자금액', '총 손익', '총 수익률(%)', '환율(USD/KRW)', ...bNames.map(n => `${n} 총액`), ...bNames.map(n => `${n} 비중(%)`)]];
-    ordered.forEach(({ s, m }, i) => {
-      const t = m.total, g = bd.groups[i];
-      bRows.push([s.snapshot_date, s.snapshot_time, 'KRW(₩)', Math.round(t.valK), Math.round(t.invK), Math.round(t.valK - t.invK), r2(pct(t.valK - t.invK, t.invK)), m.fx,
-        ...bd.list.map(b => Math.round(g[b.code].agg.valK)), ...bd.list.map(b => r2(pct(g[b.code].agg.valK, t.valK)))]);
-    });
-    const nB = bNames.length;
-    const bFormat = (row, c) => (row[2] !== 'KRW(₩)' ? null : (c >= 3 && c <= 5) || (c >= 8 && c < 8 + nB) ? F.krw : c === 6 || c >= 8 + nB ? F.pct : c === 7 ? F.fx : null);
+    // 증권사별 · 증권사·계좌별 탭 (원화 환산): 날짜마다 묶음별 총액 · 비중 — 증권사는 지금 계좌 목록 기준
+    async function dimSheet(by, title) {
+      const bd = await brokerDim(ordered.map(o => o.m), by);
+      const bNames = bd.list.map(b => b.name);
+      const rows = [[`[${title}] 금액 = 원화(₩) · 비중 = 원화 환산 기준 전체 대비 · 증권사는 지금 계좌 목록 기준 (그 뒤 지운 계좌는 '(삭제된 계좌)')`], [info],
+        ['날짜', '시각', '표시 통화', '총 평가금액', '총 투자금액', '총 손익', '총 수익률(%)', '환율(USD/KRW)', ...bNames.map(n => `${n} 총액`), ...bNames.map(n => `${n} 비중(%)`)]];
+      ordered.forEach(({ s, m }, i) => {
+        const t = m.total, g = bd.groups[i];
+        rows.push([s.snapshot_date, s.snapshot_time, 'KRW(₩)', Math.round(t.valK), Math.round(t.invK), Math.round(t.valK - t.invK), r2(pct(t.valK - t.invK, t.invK)), m.fx,
+          ...bd.list.map(b => Math.round(g[b.code].agg.valK)), ...bd.list.map(b => r2(pct(g[b.code].agg.valK, t.valK)))]);
+      });
+      const nB = bNames.length;
+      return {
+        name: title, rows,
+        widths: [11, 6, 9, 15, 15, 14, 11, 12, ...bNames.map(n => Math.max(15, n.length * 2 + 4)), ...bNames.map(n => Math.max(12, n.length * 2 + 6))],
+        formatFn: (row, c) => (row[2] !== 'KRW(₩)' ? null : (c >= 3 && c <= 5) || (c >= 8 && c < 8 + nB) ? F.krw : c === 6 || c >= 8 + nB ? F.pct : c === 7 ? F.fx : null)
+      };
+    }
     UI.downloadXlsx(`myAsset_이력_${fromVal}_${toVal}.xlsx`, [
       { name: '원화환산', rows: sheet('KRW', '원화환산'), widths, formatFn },
       { name: '달러환산', rows: sheet('USD', '달러환산'), widths, formatFn },
       { name: '통화별', rows: sheet('MIXED', '통화별'), widths, formatFn },
       { name: '금환산', rows: sheet('GOLD', '금환산'), widths: [...widths, 14], formatFn },
-      { name: '증권사별', rows: bRows, widths: [11, 6, 9, 15, 15, 14, 11, 12, ...bNames.map(() => 15), ...bNames.map(() => 12)], formatFn: bFormat }
+      await dimSheet('broker', '증권사별'),
+      await dimSheet('account', '증권사·계좌별') // 엑셀 탭 이름에는 / 를 쓸 수 없어 · 로
     ]);
   }
 
