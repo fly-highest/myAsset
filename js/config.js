@@ -77,7 +77,7 @@ window.Styles = {
     const c = this.normalize(inst && inst.style);
     if (c) return c;
     const t = inst && inst.asset_type;
-    return t === 'CASH' ? 'CASH' : t === 'CRYPTO' ? 'CRYPTO' : t === 'GOLD' ? 'COMMODITY' : 'UNSET';
+    return t === 'CASH' || t === 'PROPERTY' ? 'CASH' : t === 'CRYPTO' ? 'CRYPTO' : t === 'GOLD' ? 'COMMODITY' : 'UNSET';
   },
   isDefault(inst) { return !this.normalize(inst && inst.style); },
   name(code) {
