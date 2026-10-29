@@ -9,9 +9,9 @@ window.APP_CONFIG = {
     { code: 'GOLD', name: '금', color: '#c9a227' },
     { code: 'BLOCKCHAIN', name: 'Crypto', color: '#ef7d22' }
   ],
-  ASSET_TYPES: ['ETF', 'STOCK', 'CRYPTO', 'GOLD', 'CASH'],
+  ASSET_TYPES: ['ETF', 'STOCK', 'CRYPTO', 'GOLD', 'PROPERTY', 'CASH'],
   CURRENCIES: ['KRW', 'USD'],
-  EXCHANGES: ['KRX', 'NASDAQ', 'NYSE', 'UPBIT', 'CASH'],
+  EXCHANGES: ['KRX', 'NASDAQ', 'NYSE', 'UPBIT', 'REAL ESTATE', 'CASH'],
   STORAGE_KEY: 'myAsset.mock.v1',
   USER_ID: 'mock-user',
   // Supabase (현재가·환율 읽기 전용). publishable 키는 브라우저 공개용 키라 코드에 있어도 됩니다.

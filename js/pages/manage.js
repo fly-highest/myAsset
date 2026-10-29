@@ -608,7 +608,7 @@
     const fx = (await DataService.getFxRate()).rate;
     const isUSD = inst.currency === 'USD', isCash = inst.asset_type === 'CASH';
     const unit = isUSD ? '$' : '₩';
-    const qtyUnit = isCash ? unit : inst.asset_type === 'CRYPTO' ? inst.symbol : inst.asset_type === 'GOLD' ? 'g' : '주';
+    const qtyUnit = isCash ? unit : inst.asset_type === 'CRYPTO' ? inst.symbol : inst.asset_type === 'GOLD' ? 'g' : inst.asset_type === 'PROPERTY' ? '채' : '주';
     const v = holding || { quantity: '', avg_price: '', avg_fx_rate: fx };
     const pm = isCash ? null : (await DataService.getPriceMeta())[inst.id];
     const manual = isCash ? null : await DataService.getManualPrice(inst.id);
