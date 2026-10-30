@@ -1,6 +1,7 @@
 // sync-securities — 전체 상장 종목 목록을 외부에서 받아 DB(securities)에 저장합니다. (월 1회 자동 + 수동)
 //
 //   국내 주식 : KRX KIND 상장법인 목록 (코스피·코스닥·코넥스)
+//   국내 우선주: 네이버 금융 시가총액 목록 (KIND 에 없음)
 //   국내 ETF  : 네이버 금융 ETF 목록
 //   미국      : NASDAQ Trader 공개 파일 (nasdaqlisted.txt / otherlisted.txt — NYSE·NYSE Arca·NYSE American·Cboe)
 //   가상자산  : 업비트 원화 마켓
@@ -53,6 +54,26 @@ async function fetchNaverEtf(): Promise<Sec[]> {
     market: 'ETF', google_ticker: 'KRX:' + String(e.itemcode).trim(), upbit_market: null, list_source: 'NAVER_ETF'
   }));
   if (out.length < 300) throw new Error('목록이 너무 적습니다 (' + out.length + ')');
+  return out;
+}
+
+// KIND 목록에는 보통주만 있어 우선주는 네이버 금융 시가총액 목록에서 받습니다.
+// 국내 주식은 보통주 코드가 0 으로 끝나고 우선주는 5·7·9·K·L 등으로 끝납니다 (2026-10-30 전체 대조: 112개 모두 우선주)
+async function fetchNaverPreferred(): Promise<Sec[]> {
+  const out: Sec[] = [];
+  for (const market of ['KOSPI', 'KOSDAQ']) {
+    for (let page = 1; page <= 100; page++) {
+      const res = await fetch(`https://m.stock.naver.com/api/stocks/marketValue/${market}?page=${page}&pageSize=100`, { headers: UA });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const list = (await res.json())?.stocks || [];
+      if (!list.length) break;
+      for (const s of list as { itemCode: string; stockName: string; stockEndType: string }[]) {
+        if (s.stockEndType !== 'stock' || s.itemCode.endsWith('0')) continue;
+        out.push({ symbol: s.itemCode, exchange: 'KRX', name: s.stockName.trim(), eng_name: null, asset_type: 'STOCK', currency: 'KRW', market, google_ticker: 'KRX:' + s.itemCode, upbit_market: null, list_source: 'NAVER_PREF' });
+      }
+    }
+  }
+  if (out.length < 50) throw new Error('목록이 너무 적습니다 (' + out.length + ')');
   return out;
 }
 
@@ -112,7 +133,7 @@ Deno.serve(async (req) => {
   const { data: run } = await db.from('securities_runs').insert({ trigger }).select('id, started_at').single();
   const startedAt = run?.started_at ?? new Date().toISOString();
 
-  const sources: [string, () => Promise<Sec[]>][] = [['KIND', fetchKind], ['NAVER_ETF', fetchNaverEtf], ['NASDAQ_TRADER', fetchNasdaqTrader], ['UPBIT', fetchUpbit]];
+  const sources: [string, () => Promise<Sec[]>][] = [['KIND', fetchKind], ['NAVER_ETF', fetchNaverEtf], ['NAVER_PREF', fetchNaverPreferred], ['NASDAQ_TRADER', fetchNasdaqTrader], ['UPBIT', fetchUpbit]];
   const counts: Record<string, number | string> = {};
   const okSources: string[] = [];
   const all = new Map<string, Sec>();

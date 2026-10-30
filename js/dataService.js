@@ -604,7 +604,7 @@ window.DataService = (function () {
   }
   // ---------------------------------------------------------------
   // 전체 종목 목록 (DB securities, 약 17,000개) — 매월 1일 서버(sync-securities)가 외부에서 받아 갱신
-  //   국내 주식 KIND · 국내 ETF 네이버 · 미국 NASDAQ Trader · 업비트
+  //   국내 주식 KIND · 국내 우선주·ETF 네이버 · 미국 NASDAQ Trader · 업비트
   // DB 에 연결할 수 없으면(오프라인·자체 점검) mock/catalog.js 의 예시 목록을 씁니다.
   // ---------------------------------------------------------------
   const catalogKey = x => instKey(x.symbol, x.exchange);

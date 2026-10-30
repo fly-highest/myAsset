@@ -86,7 +86,7 @@
       ${targetCard(plans)}
       <div class="card pad catalog-bar">
         <div><b>전체 상장 종목 목록</b> <span class="muted">${Fmt.plain(cat.count)}개 종목 · 마지막 갱신 ${cat.syncedAt ? Fmt.mdhm(cat.syncedAt) : '—'} · 다음 자동 갱신 ${Fmt.mdhm(cat.nextSyncAt)}</span>
-          <div class="small muted">국내 주식(KRX KIND)·국내 ETF(네이버)·미국 주식·ETF(NASDAQ 공개 파일)·업비트 코인 목록을 매월 1일 받아 DB에 저장하고, [종목 추가] 검색은 이 목록을 조회합니다.</div></div>
+          <div class="small muted">국내 주식(KRX KIND)·국내 우선주·ETF(네이버)·미국 주식·ETF(NASDAQ 공개 파일)·업비트 코인 목록을 매월 1일 받아 DB에 저장하고, [종목 추가] 검색은 이 목록을 조회합니다.</div></div>
         <button type="button" class="btn" id="btn-sync" title="전체 상장 종목 목록을 지금 다시 받아오고, 등록된 종목의 이름도 새 이름으로 바꿉니다">↻ 목록 최신화</button>
       </div>
       <p class="small muted">종목을 자산군에 <b>추가</b>하거나 <b>제거</b>해도 종목과 보유 내역은 지워지지 않고 자산군 분류만 바뀝니다. 한 종목을 옮기면 그 종목을 가진 모든 계좌의 보유분이 함께 옮겨집니다.</p>
