@@ -612,7 +612,7 @@
     const v = holding || { quantity: '', avg_price: '', avg_fx_rate: fx };
     const pm = isCash ? null : (await DataService.getPriceMeta())[inst.id];
     const manual = isCash ? null : await DataService.getManualPrice(inst.id);
-    const SRCN = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 환산', MANUAL: '직접 입력', MOCK: '예시 가격' };
+    const SRCN = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', YAHOO: 'Yahoo Finance', UPBIT: '업비트', GOLD: '국제 금시세 환산', MANUAL: '직접 입력', MOCK: '예시 가격' };
     const hasMarket = pm && !['MANUAL', 'MOCK'].includes(pm.source);
     const m = App.modal({
       title: holding ? '보유 수정' : '보유 추가',

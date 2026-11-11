@@ -9,6 +9,7 @@
 // 가격 출처
 //   GOOGLE : Google 시트의 GOOGLEFINANCE 결과 (웹에 게시한 CSV, 비밀값 GSHEET_CSV_URL 또는 app_settings)
 //   NAVER  : 국내 ETF·주식 중 Google 시세가 없는 종목은 네이버 금융 시세로 대체
+//   YAHOO  : 미국 종목 중 Google 시세가 없는 종목은 Yahoo 시세로 대체
 //   UPBIT  : 업비트 공개 시세 API (원화 마켓)
 //   GOLD   : KRX 금현물(원/g) = 네이버 금융 KRX 금 시세 (실패 시 국제 금시세 ÷ 31.1034768 × USD/KRW)
 //   환율·금시세가 Google 에 없으면: 환율 open.er-api.com(일 1회), 금 Yahoo 금 선물 GC=F (실패 시 api.gold-api.com)
@@ -170,11 +171,21 @@ Deno.serve(async (req) => {
       return p > 0 ? p : null;
     } catch { return null; }
   };
+  // 미국 종목은 Google 에 시세가 없으면 Yahoo 시세로 대신합니다 (예: MRVL 은 GOOGLEFINANCE 가 늘 빈칸, 2026-11-11 확인)
+  const yahooStock = async (symbol: string) => {
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.replace(/\./g, '-'))}?range=1d&interval=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!r.ok) return null;
+      const p = Number((await r.json())?.chart?.result?.[0]?.meta?.regularMarketPrice);
+      return p > 0 ? p : null;
+    } catch { return null; }
+  };
   for (const t of targets.filter((t) => t.source === 'GOOGLE')) {
     const p = t.google_ticker ? g.get(String(t.google_ticker).toUpperCase()) : null;
     if (p) { rows.push({ symbol: t.symbol, exchange: t.exchange, price: p, currency: t.currency, source: 'GOOGLE', as_of: now, updated_at: now }); continue; }
-    const n = t.exchange !== 'KRX' ? null : t.asset_type === 'ETF' ? (await naverEtf()).get(t.symbol) : await naverStock(t.symbol);
-    if (n) rows.push({ symbol: t.symbol, exchange: t.exchange, price: n, currency: 'KRW', source: 'NAVER', as_of: now, updated_at: now });
+    const krx = t.exchange === 'KRX';
+    const n = !krx ? await yahooStock(t.symbol) : t.asset_type === 'ETF' ? (await naverEtf()).get(t.symbol) : await naverStock(t.symbol);
+    if (n) rows.push({ symbol: t.symbol, exchange: t.exchange, price: n, currency: krx ? 'KRW' : t.currency, source: krx ? 'NAVER' : 'YAHOO', as_of: now, updated_at: now });
     else fail(t, sheetNote || `Google 시세 없음 (${t.google_ticker})`);
   }
 

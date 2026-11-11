@@ -106,7 +106,7 @@
   }
 
   async function exportXlsx({ current = false, snaps = [], from, to }) {
-    const SRC = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', UPBIT: '업비트', GOLD: '국제 금시세 환산', MANUAL: '직접 입력', MOCK: '예시 가격' };
+    const SRC = { GOOGLE: 'Google Finance', NAVER: '네이버 금융', YAHOO: 'Yahoo Finance', UPBIT: '업비트', GOLD: '국제 금시세 환산', MANUAL: '직접 입력', MOCK: '예시 가격' };
     const pct = (a, b) => (b ? (a / b) * 100 : 0);
     const r2 = v => Math.round(v * 100) / 100;
     const money = (v, cur) => (cur === 'USD' || cur === 'XAU' ? r2(v) : Math.round(v));
