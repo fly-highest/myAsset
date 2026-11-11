@@ -63,9 +63,10 @@ Deno.serve(async (req) => {
     const want = new Set(items.filter((x) => x?.symbol && x?.exchange).map((x) => String(x.symbol).toUpperCase() + '@' + String(x.exchange).toUpperCase()));
     if (!want.size) return json({ ok: true, tracked: 0 });
     const symbols = [...new Set([...want].map((k) => k.split('@')[0]))];
-    const { data: secs } = await db.from('securities').select('symbol,exchange,name,asset_type,currency,google_ticker,upbit_market').in('symbol', symbols);
+    const { data: secs } = await db.from('securities').select('symbol,exchange,name,asset_type,currency,google_ticker,upbit_market,list_source').in('symbol', symbols);
     const now = new Date().toISOString();
-    const rows = (secs || []).filter((s) => want.has(s.symbol.toUpperCase() + '@' + s.exchange)).map((s) => ({
+    // 직접 등록(MANUAL)한 종목 중 Google 티커가 없는 것(예: 999999 잡주)은 시세를 조회하지 않음 — 평균매입가·수동 가격으로 평가
+    const rows = (secs || []).filter((s) => want.has(s.symbol.toUpperCase() + '@' + s.exchange) && !(s.list_source === 'MANUAL' && !s.google_ticker)).map((s) => ({
       symbol: s.symbol, exchange: s.exchange, name: s.name, asset_type: s.asset_type, currency: s.currency,
       source: s.asset_type === 'CASH' ? 'CASH' : s.exchange === 'UPBIT' ? 'UPBIT' : s.asset_type === 'GOLD' ? 'GOLD' : 'GOOGLE',
       google_ticker: s.google_ticker, upbit_market: s.upbit_market, active: true, last_requested_at: now, updated_at: now
