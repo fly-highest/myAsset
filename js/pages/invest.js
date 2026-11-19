@@ -137,31 +137,31 @@
   }
   function strategyTable(S, { plans, model, conv, cur }) {
     const pct = v => (v == null ? '—' : `<span class="${Fmt.cls(v, 'PCT')}">${Fmt.pct(v)}</span>`);
-    const since = s => (s && s.since ? `<div class="sub muted">${s.since === '오늘' ? '오늘부터' : esc(s.since) + '부터'}</div>` : '');
+    const since = d => (d ? `<div class="sub muted">${d === '오늘' ? '오늘부터' : esc(d) + '부터'}</div>` : '');
     const planName = id => { const p = plans.find(x => x.id === id); return p ? `'${esc(p.name)}'` : '해당 기준'; };
-    // 한 전략 = 조건 3줄. 지금 조건에 해당하는 줄에 '현재', ±1% 사이일 때는 직전 상태 줄에 '적용 중'
-    const block = (name, ind, s, conds) => conds.map((c, i) => {
-      const now = !!s && (c.key === 'mid' ? !s.raw : s.raw === c.key);
-      const apply = !!s && !s.raw && c.key === s.state;
+    // 한 전략 = 조건 여러 줄. 지금 조건에 해당하는 줄(nowKey)에 '현재', ±1% 사이일 때는 직전 상태 줄(applyKey)에 '적용 중'
+    const block = (name, ind, from, conds, nowKey, applyKey) => conds.map((c, i) => {
+      const now = c.key === nowKey, apply = !!applyKey && c.key === applyKey;
       return `<tr class="${now || apply ? 'active-plan' : ''}">
-        ${i === 0 ? `<td rowspan="${conds.length}" class="nowrap sticky-col"><b>${name}</b>${since(s)}</td><td rowspan="${conds.length}" class="small nowrap">${ind}</td>` : ''}
+        ${i === 0 ? `<td rowspan="${conds.length}" class="nowrap sticky-col"><b>${name}</b>${since(from)}</td><td rowspan="${conds.length}" class="small nowrap">${ind}</td>` : ''}
         <td>${c.when}</td><td>${c.act}</td>
         <td class="nowrap">${now ? '<span class="tag tag-active">현재</span>' : ''}${apply ? '<span class="tag tag-active">적용 중</span>' : ''}</td></tr>`;
     }).join('');
     const q = S.qqq, g = S.gold, f = S.ief, none = '<span class="muted">자료 없음</span>';
+    // 금: 금 추세(20/120일선) × IEF(100일선) → 전부 보유 / 절반 보유 / 전부 매도
+    const goldKey = (gs, fs) => (gs === 'down' ? 'sell' : gs === 'up' && fs ? (fs === 'up' ? 'full' : 'half') : null);
+    const gRaw = g && f ? goldKey(g.raw, f.raw) : null, gEff = g && f ? goldKey(g.state, f.state) : null;
+    const gFrom = !gEff ? null : gEff === 'sell' ? g.since : [g.since, f.since].sort().pop();
     const rows = [
-      block('QQQ 200일선 — 자산 비중', q ? `QQQ ${Fmt.usd(q.fast)} <span class="muted">(${Fmt.mdhm(q.asOf)})</span><br>200일선 ${Fmt.usd(q.slow)}<br>차이 ${pct(q.diff)}` : none, q, [
+      block('QQQ 200일선 — 자산 비중', q ? `QQQ ${Fmt.usd(q.fast)} <span class="muted">(${Fmt.mdhm(q.asOf)})</span><br>200일선 ${Fmt.usd(q.slow)}<br>차이 ${pct(q.diff)}` : none, q && q.since, [
         { key: 'up', when: 'QQQ가 200일선보다 <b>1% 넘게 위</b>', act: `${planName('tgt-above')} 목표 비중으로 맞춤` },
         { key: 'down', when: 'QQQ가 200일선보다 <b>1% 넘게 아래</b>', act: `${planName('tgt-below')} 목표 비중으로 맞춤` },
-        { key: 'mid', when: '그 사이 (±1% 이내)', act: '직전 기준 유지' }]),
-      block('금 살까? — 매수·매도', g ? `국제 금시세 20일선 ${Fmt.usd(g.fast)}<br>120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}` : none, g, [
-        { key: 'up', when: '20일선이 120일선보다 <b>1% 넘게 위</b>', act: '<b class="pos">금을 삽니다</b>' },
-        { key: 'down', when: '20일선이 120일선보다 <b>1% 넘게 아래</b>', act: '<b class="neg">금을 전부 팝니다</b>' },
-        { key: 'mid', when: '그 사이 (±1% 이내)', act: '하던 대로 둡니다' }]),
-      block('얼마나 살까? — 금 보유 비율', f ? `IEF(미 국채 7~10년) ${Fmt.usd(f.fast)}<br>100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, f, [
-        { key: 'up', when: 'IEF가 100일선보다 <b>1% 넘게 위</b>', act: '🟢 금 목표 비중의 <b>100%</b> 보유' },
-        { key: 'down', when: 'IEF가 100일선보다 <b>1% 넘게 아래</b>', act: '🟡 금 목표 비중의 <b>50%</b>만 보유' },
-        { key: 'mid', when: '그 사이 (±1% 이내)', act: '이전 비중 유지' }])
+        { key: 'mid', when: '그 사이 (±1% 이내)', act: '직전 기준 유지' }], q ? q.raw || 'mid' : null, q && !q.raw ? q.state : null),
+      block('금 매매 — 살까? · 얼마나?', g && f ? `금 20일선 ${Fmt.usd(g.fast)} · 120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}<br>IEF ${Fmt.usd(f.fast)} · 100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, gFrom, [
+        { key: 'full', when: '금 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 위</b>', act: '<b class="pos">금을 삽니다</b> · 🟢 금 목표 비중의 <b>100%</b>' },
+        { key: 'half', when: '금 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 아래</b>', act: '<b class="pos">금을 삽니다</b> · 🟡 금 목표 비중의 <b>50%</b>만' },
+        { key: 'sell', when: '금 20일선이 120일선보다 <b>1% 넘게 아래</b> (IEF 상관없음)', act: '<b class="neg">금을 전부 팝니다</b>' },
+        { key: 'mid', when: '그 사이 (금 또는 IEF가 ±1% 이내)', act: '하던 대로 둡니다 (매수·매도와 비중 모두 직전 유지)' }], g && f ? gRaw || 'mid' : null, gRaw ? null : gEff)
     ].join('');
 
     // 지금 할 일: 자산 비중 기준 + 금 목표 = 기준의 금 % × (금 매수 상태면 IEF 비율 100%/50%, 매도 상태면 0)

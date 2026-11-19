@@ -423,7 +423,8 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .sp-item .sp-main.form .field { margin-bottom: 6px; }
 .sp-item .sp-desc { white-space: pre-wrap; }
 .stats-tbl th.th-col.on .th-sort { color: var(--primary); }
-.strat td { vertical-align: middle; }
+.strat td { vertical-align: middle; white-space: normal; }
+.strat td.nowrap { white-space: nowrap; }
 .strat .sub { font-size: 11px; font-weight: 400; margin-top: 2px; }
 .strat-todo { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: #f3f7ff; border: 1px solid #c9d8f7; font-size: 13.5px; }
 .strat-todo ul { margin: 6px 0 4px; padding-left: 18px; }
