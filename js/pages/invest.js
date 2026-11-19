@@ -7,8 +7,8 @@
   async function render() {
     const { model, status } = await App.loadCurrentModel();
     const [ps, plans, sig, ...hs] = await Promise.all([DataService.getPriceStatus(), DataService.getTargetPlans(), DataService.getQqqSignal(),
-      ...['QQQ', 'XAU', 'IEF'].map(p => DataService.getFxHistory(p).catch(() => []))]);
-    const S = strategySignals(sig, { QQQ: hs[0], XAU: hs[1], IEF: hs[2] });
+      ...['QQQ', 'GLD', 'IEF'].map(p => DataService.getFxHistory(p).catch(() => []))]);
+    const S = strategySignals(sig, { QQQ: hs[0], GLD: hs[1], IEF: hs[2] });
     // 지금 해당하는 기준: 기본 기준(200일선 +1% 이상 / −1% 이하)과 QQQ 200일선 구간을 연결 (±1% 사이면 직전 구간)
     const activeId = S.qqq && S.qqq.state ? { up: 'tgt-above', down: 'tgt-below' }[S.qqq.state] : null;
     // 목표 비교는 하나의 통화로 합산해야 하므로 혼합 모드는 원화 기준으로 보여 줍니다
@@ -133,7 +133,7 @@
       const state = raw || (h && h.state);
       qqq = { fast: sig.price, slow: sig.sma, diff: sig.diffPct, asOf: sig.priceAsOf, raw, state, since: h && h.state === state ? h.since : raw ? '오늘' : null };
     }
-    return { qqq, gold: crossSignal(hist.XAU, 20, 120), ief: crossSignal(hist.IEF, 1, 100) };
+    return { qqq, gold: crossSignal(hist.GLD, 20, 120), ief: crossSignal(hist.IEF, 1, 100) };
   }
   function strategyTable(S, { plans, model, conv, cur }) {
     const pct = v => (v == null ? '—' : `<span class="${Fmt.cls(v, 'PCT')}">${Fmt.pct(v)}</span>`);
@@ -157,11 +157,11 @@
         { key: 'up', when: 'QQQ가 200일선보다 <b>1% 넘게 위</b>', act: `${planName('tgt-above')} 목표 비중으로 맞춤` },
         { key: 'down', when: 'QQQ가 200일선보다 <b>1% 넘게 아래</b>', act: `${planName('tgt-below')} 목표 비중으로 맞춤` },
         { key: 'mid', when: '그 사이 (±1% 이내)', act: '직전 기준 유지' }], q ? q.raw || 'mid' : null, q && !q.raw ? q.state : null),
-      block('금 매매 — 살까? · 얼마나?', g && f ? `금 20일선 ${Fmt.usd(g.fast)} · 120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}<br>IEF ${Fmt.usd(f.fast)} · 100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, gFrom, [
-        { key: 'full', when: '금 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 위</b>', act: '<b class="pos">금을 삽니다</b> · 🟢 금 목표 비중의 <b>100%</b>' },
-        { key: 'half', when: '금 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 아래</b>', act: '<b class="pos">금을 삽니다</b> · 🟡 금 목표 비중의 <b>50%</b>만' },
-        { key: 'sell', when: '금 20일선이 120일선보다 <b>1% 넘게 아래</b> (IEF 상관없음)', act: '<b class="neg">금을 전부 팝니다</b>' },
-        { key: 'mid', when: '그 사이 (금 또는 IEF가 ±1% 이내)', act: '하던 대로 둡니다 (매수·매도와 비중 모두 직전 유지)' }], g && f ? gRaw || 'mid' : null, gRaw ? null : gEff)
+      block('금(GLD) 매매 — 살까? · 얼마나?', g && f ? `GLD 20일선 ${Fmt.usd(g.fast)} · 120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}<br>IEF ${Fmt.usd(f.fast)} · 100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, gFrom, [
+        { key: 'full', when: 'GLD 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 위</b>', act: '<b class="pos">GLD를 삽니다</b> · 🟢 금 목표 비중의 <b>100%</b>' },
+        { key: 'half', when: 'GLD 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 아래</b>', act: '<b class="pos">GLD를 삽니다</b> · 🟡 금 목표 비중의 <b>50%</b>만' },
+        { key: 'sell', when: 'GLD 20일선이 120일선보다 <b>1% 넘게 아래</b> (IEF 상관없음)', act: '<b class="neg">GLD를 전부 팝니다</b>' },
+        { key: 'mid', when: '그 사이 (GLD 또는 IEF가 ±1% 이내)', act: '하던 대로 둡니다 (매수·매도와 비중 모두 직전 유지)' }], g && f ? gRaw || 'mid' : null, gRaw ? null : gEff)
     ].join('');
 
     // 지금 할 일: 자산 비중 기준 + 금 목표 = 기준의 금 % × (금 매수 상태면 IEF 비율 100%/50%, 매도 상태면 0)
@@ -183,7 +183,7 @@
     }
     return `
       <div class="sec card pad">
-        <div class="sec-hd"><h2>전략 신호</h2><span class="small muted">상태별로 할 일 · 1% 넘게 벗어날 때만 상태가 바뀌고, 그 사이에서는 직전 상태를 유지합니다 · 금은 국제 금시세(달러/온스) 일별 종가 기준</span></div>
+        <div class="sec-hd"><h2>전략 신호</h2><span class="small muted">상태별로 할 일 · 1% 넘게 벗어날 때만 상태가 바뀌고, 그 사이에서는 직전 상태를 유지합니다 · 금 전략은 GLD(금 ETF) 일별 종가 기준</span></div>
         <div class="tbl-wrap"><table class="tbl invest strat">
           <thead><tr><th class="sticky-col">전략</th><th>지표 (지금)</th><th>상태</th><th>행동</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
