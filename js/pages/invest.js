@@ -6,9 +6,11 @@
 (function () {
   async function render() {
     const { model, status } = await App.loadCurrentModel();
-    const [ps, plans, sig] = await Promise.all([DataService.getPriceStatus(), DataService.getTargetPlans(), DataService.getQqqSignal()]);
-    // 지금 해당하는 기준: 기본 기준(200일선 +1% 이상 / −1% 이하)과 QQQ 200일선 구간을 연결
-    const activeId = sig ? { above: 'tgt-above', below: 'tgt-below' }[sig.zone] : null;
+    const [ps, plans, sig, ...hs] = await Promise.all([DataService.getPriceStatus(), DataService.getTargetPlans(), DataService.getQqqSignal(),
+      ...['QQQ', 'XAU', 'IEF'].map(p => DataService.getFxHistory(p).catch(() => []))]);
+    const S = strategySignals(sig, { QQQ: hs[0], XAU: hs[1], IEF: hs[2] });
+    // 지금 해당하는 기준: 기본 기준(200일선 +1% 이상 / −1% 이하)과 QQQ 200일선 구간을 연결 (±1% 사이면 직전 구간)
+    const activeId = S.qqq && S.qqq.state ? { up: 'tgt-above', down: 'tgt-below' }[S.qqq.state] : null;
     // 목표 비교는 하나의 통화로 합산해야 하므로 혼합 모드는 원화 기준으로 보여 줍니다
     const mode = App.mode === 'USD' || (App.mode === 'GOLD' && model.gold) ? App.mode : 'KRW'; // 금환산도 지원
     const cur = mode === 'GOLD' ? 'XAU' : mode;
@@ -66,7 +68,8 @@
         <div class="toolbar"><a class="btn btn-sm" href="manage.html#composition">목표 비중 수정</a></div>
       </div>
       ${App.statusBar(status, { showSnapshot: false })}
-      ${signalCard(sig)}
+      ${sig ? '' : '<div class="sec notice">QQQ 200일선 정보를 불러오지 못했습니다. 잠시 후 [↻ 시세 갱신]을 눌러 주세요.</div>'}
+      ${strategyTable(S, { plans, model, conv, cur })}
       <div class="sec">${UI.totalsCards(model.total, mode, fx)}</div>
       <div class="sec">
         <div class="sec-hd"><h2>목표 대비 현재 자산 현황</h2>
@@ -91,30 +94,102 @@
       </div>`;
   }
 
-  // QQQ 현재가 vs 200일선 비교 카드
-  function signalCard(sig) {
-    if (!sig) return '<div class="sec notice">QQQ 200일선 정보를 불러오지 못했습니다. 잠시 후 [↻ 시세 갱신]을 눌러 주세요.</div>';
-    const SRC = { GOOGLE: 'Google Finance', YAHOO: 'Yahoo Finance', NAVER: '네이버 금융' };
-    const zone = {
-      above: { cls: 'zone-above', text: '200일선 +1% 이상' },
-      below: { cls: 'zone-below', text: '200일선 −1% 이하' },
-      between: { cls: 'zone-between', text: '200일선 ±1% 사이 (기준 변경 없음 구간)' }
-    }[sig.zone];
-    const diff = sig.price - sig.sma;
+  // ---- 전략 신호: 상태 → 행동 표 ----
+  // 이동평균 (n일, 그날 포함). 자료가 n일보다 적은 앞쪽은 null
+  function smaOf(rows, n) {
+    const out = new Array(rows.length).fill(null);
+    let sum = 0;
+    rows.forEach((r, i) => {
+      sum += r.close;
+      if (i >= n) sum -= rows[i - n].close;
+      if (i >= n - 1) out[i] = sum / n;
+    });
+    return out;
+  }
+  // 1% 넘게 벗어날 때만 상태가 바뀌고 그 사이에서는 직전 상태 유지 → 지금 상태와 그 상태가 시작된 날
+  function hysteresis(rows, diffs) {
+    let state = null, since = null;
+    diffs.forEach((d, i) => {
+      if (d == null) return;
+      const ns = d > 1 ? 'up' : d < -1 ? 'down' : state;
+      if (ns !== state) { state = ns; since = rows[i].date; }
+    });
+    return { state, since };
+  }
+  // 빠른 선(fast, 1 = 그날 종가) ÷ 느린 선(slow) − 1 (%) 과 상태
+  function crossSignal(rows, fast, slow) {
+    if (rows.length < slow) return null;
+    const f = fast === 1 ? rows.map(r => r.close) : smaOf(rows, fast), s = smaOf(rows, slow);
+    const diffs = rows.map((r, i) => (f[i] != null && s[i] ? (f[i] / s[i] - 1) * 100 : null));
+    const last = rows.length - 1, d = diffs[last];
+    return { fast: f[last], slow: s[last], diff: d, raw: d > 1 ? 'up' : d < -1 ? 'down' : null, ...hysteresis(rows, diffs) };
+  }
+  function strategySignals(sig, hist) {
+    // QQQ: 지금 값은 최신 현재가 vs 200일선(indicators), 직전 상태는 일별 종가(fx_daily)로 계산
+    let qqq = null;
+    if (sig) {
+      const h = crossSignal(hist.QQQ, 1, sig.period || 200);
+      const raw = sig.zone === 'above' ? 'up' : sig.zone === 'below' ? 'down' : null;
+      const state = raw || (h && h.state);
+      qqq = { fast: sig.price, slow: sig.sma, diff: sig.diffPct, asOf: sig.priceAsOf, raw, state, since: h && h.state === state ? h.since : raw ? '오늘' : null };
+    }
+    return { qqq, gold: crossSignal(hist.XAU, 20, 120), ief: crossSignal(hist.IEF, 1, 100) };
+  }
+  function strategyTable(S, { plans, model, conv, cur }) {
+    const pct = v => (v == null ? '—' : `<span class="${Fmt.cls(v, 'PCT')}">${Fmt.pct(v)}</span>`);
+    const since = s => (s && s.since ? `<div class="sub muted">${s.since === '오늘' ? '오늘부터' : esc(s.since) + '부터'}</div>` : '');
+    const planName = id => { const p = plans.find(x => x.id === id); return p ? `'${esc(p.name)}'` : '해당 기준'; };
+    // 한 전략 = 조건 3줄. 지금 조건에 해당하는 줄에 '현재', ±1% 사이일 때는 직전 상태 줄에 '적용 중'
+    const block = (name, ind, s, conds) => conds.map((c, i) => {
+      const now = !!s && (c.key === 'mid' ? !s.raw : s.raw === c.key);
+      const apply = !!s && !s.raw && c.key === s.state;
+      return `<tr class="${now || apply ? 'active-plan' : ''}">
+        ${i === 0 ? `<td rowspan="${conds.length}" class="nowrap sticky-col"><b>${name}</b>${since(s)}</td><td rowspan="${conds.length}" class="small nowrap">${ind}</td>` : ''}
+        <td>${c.when}</td><td>${c.act}</td>
+        <td class="nowrap">${now ? '<span class="tag tag-active">현재</span>' : ''}${apply ? '<span class="tag tag-active">적용 중</span>' : ''}</td></tr>`;
+    }).join('');
+    const q = S.qqq, g = S.gold, f = S.ief, none = '<span class="muted">자료 없음</span>';
+    const rows = [
+      block('QQQ 200일선 — 자산 비중', q ? `QQQ ${Fmt.usd(q.fast)} <span class="muted">(${Fmt.mdhm(q.asOf)})</span><br>200일선 ${Fmt.usd(q.slow)}<br>차이 ${pct(q.diff)}` : none, q, [
+        { key: 'up', when: 'QQQ가 200일선보다 <b>1% 넘게 위</b>', act: `${planName('tgt-above')} 목표 비중으로 맞춤` },
+        { key: 'down', when: 'QQQ가 200일선보다 <b>1% 넘게 아래</b>', act: `${planName('tgt-below')} 목표 비중으로 맞춤` },
+        { key: 'mid', when: '그 사이 (±1% 이내)', act: '직전 기준 유지' }]),
+      block('금 살까? — 매수·매도', g ? `국제 금시세 20일선 ${Fmt.usd(g.fast)}<br>120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}` : none, g, [
+        { key: 'up', when: '20일선이 120일선보다 <b>1% 넘게 위</b>', act: '<b class="pos">금을 삽니다</b>' },
+        { key: 'down', when: '20일선이 120일선보다 <b>1% 넘게 아래</b>', act: '<b class="neg">금을 전부 팝니다</b>' },
+        { key: 'mid', when: '그 사이 (±1% 이내)', act: '하던 대로 둡니다' }]),
+      block('얼마나 살까? — 금 보유 비율', f ? `IEF(미 국채 7~10년) ${Fmt.usd(f.fast)}<br>100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, f, [
+        { key: 'up', when: 'IEF가 100일선보다 <b>1% 넘게 위</b>', act: '🟢 금 목표 비중의 <b>100%</b> 보유' },
+        { key: 'down', when: 'IEF가 100일선보다 <b>1% 넘게 아래</b>', act: '🟡 금 목표 비중의 <b>50%</b>만 보유' },
+        { key: 'mid', when: '그 사이 (±1% 이내)', act: '이전 비중 유지' }])
+    ].join('');
+
+    // 지금 할 일: 자산 비중 기준 + 금 목표 = 기준의 금 % × (금 매수 상태면 IEF 비율 100%/50%, 매도 상태면 0)
+    const planId = q && q.state ? { up: 'tgt-above', down: 'tgt-below' }[q.state] : null;
+    const plan = plans.find(p => p.id === planId);
+    const todo = [];
+    if (plan) todo.push(`자산 비중: <b>${esc(plan.name)}</b> 목표 비중으로 맞추기 (아래 표의 '현재 해당' 행)`);
+    const gold = model.groups.GOLD;
+    if (plan && g && g.state && gold) {
+      const ratio = g.state === 'down' ? 0 : f && f.state === 'down' ? 0.5 : f && f.state === 'up' ? 1 : null;
+      if (ratio != null) {
+        const gw = plan.weights.GOLD || 0, totalK = model.total.valK, tgt = gw * ratio;
+        const curP = totalK ? (gold.agg.valK / totalK) * 100 : 0;
+        const d = conv(totalK * tgt / 100 - gold.agg.valK);
+        const how = g.state === 'down' ? '금 매도 상태' : `${Fmt.weight(gw)} × ${ratio * 100}%`;
+        const act = Math.abs(d) < (cur === 'USD' ? 0.01 : 1) ? '그대로' : `<b class="${Fmt.cls(d, cur)}">${Fmt.signedMoney(d, cur)} ${d > 0 ? '매수' : '매도'}</b>`;
+        todo.push(`금: 목표 <b>${Fmt.weight(tgt)}</b> (${how}) · 현재 ${Fmt.weight(curP)} → ${act}`);
+      }
+    }
     return `
-      <div class="sec signal-grid">
-        <div class="card stat"><div class="stat-t">QQQ 최신 현재가</div>
-          <div class="stat-v">${Fmt.usd(sig.price)}</div>
-          <div class="stat-sub">${SRC[sig.priceSource] || sig.priceSource} · ${Fmt.mdhm(sig.priceAsOf)} 기준</div></div>
-        <div class="card stat"><div class="stat-t">QQQ ${sig.period}일선</div>
-          <div class="stat-v">${Fmt.usd(sig.sma)}</div>
-          <div class="stat-sub">최근 ${sig.period}거래일 종가 평균 · 마지막 종가 ${sig.smaDate} (미국) · ${SRC[sig.smaSource] || sig.smaSource}</div></div>
-        <div class="card stat"><div class="stat-t">현재가 − ${sig.period}일선</div>
-          <div class="stat-v"><span class="${Fmt.cls(sig.diffPct, 'PCT')}">${Fmt.pct(sig.diffPct)}</span></div>
-          <div class="stat-sub"><span class="${Fmt.cls(diff, 'USD')}">${Fmt.signedMoney(diff, 'USD')}</span> · +1% 선 ${Fmt.usd(sig.sma * 1.01)} / −1% 선 ${Fmt.usd(sig.sma * 0.99)}</div></div>
-        <div class="card stat ${zone.cls}"><div class="stat-t">현재 구간</div>
-          <div class="stat-v zone-text">${zone.text}</div>
-          <div class="stat-sub">${sig.zone === 'between' ? '±1% 사이에서는 직전 기준을 유지하는 것을 권장' : '아래 표에서 이 기준 행에 \'현재 해당\' 표시'}</div></div>
+      <div class="sec card pad">
+        <div class="sec-hd"><h2>전략 신호</h2><span class="small muted">상태별로 할 일 · 1% 넘게 벗어날 때만 상태가 바뀌고, 그 사이에서는 직전 상태를 유지합니다 · 금은 국제 금시세(달러/온스) 일별 종가 기준</span></div>
+        <div class="tbl-wrap"><table class="tbl invest strat">
+          <thead><tr><th class="sticky-col">전략</th><th>지표 (지금)</th><th>상태</th><th>행동</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        ${todo.length ? `<div class="strat-todo"><b>지금 할 일</b><ul>${todo.map(t => `<li>${t}</li>`).join('')}</ul>
+          <div class="small muted">아래 '목표 대비' 표의 금 금액은 기준의 금 목표 비중 그대로이고, 금 전략을 반영한 금액은 여기에 표시합니다.</div></div>` : ''}
       </div>`;
   }
 

@@ -1,5 +1,5 @@
 // update-markets — 시장 지표 일별 종가를 DB(fx_daily)에 이어 붙입니다. (매시 15분 자동)
-//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · KOSPI · KOSDAQ · GLD · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
+//   Yahoo(+Google): DXY · WTI · BRENT · QQQ · SPY · KOSPI · KOSDAQ · GLD · IEF · VIX · COPPER · XAU(국제 금시세) · SILVER(은) · BTC(매일)
 //   그 밖: 미 재무부(국채 10년·2년·금리차) · 업비트(비트코인 원화 · 데이터랩 비트코인 도미넌스) · 네이버(한국 국채 3년) · KB(선도아파트 50 · 아파트 PIR) · FRED(하이일드 스프레드·M2) · CNN(공포·탐욕)
 //   1순위: Google Finance (Google 시트의 GOOGLEFINANCE, 매시 정각 update-prices 와 같은 시트) → 오늘(거래일) 값
 //   2순위: Yahoo Finance 일봉 (Google 에 값이 없을 때, 그리고 빠진 지난 날짜 채우기)
@@ -25,6 +25,8 @@ const SERIES: { pair: string; google: string | string[] | null; yahoo: string; e
   { pair: 'KOSPI', google: null, yahoo: '^KS11' },
   { pair: 'KOSDAQ', google: null, yahoo: '^KQ11' },
   { pair: 'GLD', google: 'NYSEARCA:GLD', yahoo: 'GLD' },
+  // 미국 7~10년 국채 ETF — 투자 화면 금 매매 전략의 금 보유 비율(IEF 100일선) 판단용
+  { pair: 'IEF', google: 'NASDAQ:IEF', yahoo: 'IEF' },
   { pair: 'VIX', google: 'INDEXCBOE:VIX', yahoo: '^VIX' }, // CBOE 변동성 지수
   { pair: 'COPPER', google: null, yahoo: 'HG=F' }, // 구리 선물 (달러/파운드) — 구리/금 비율용
   // 국제 금시세(달러/온스, 금환산 이력용): GOOGLEFINANCE 의 CURRENCY:XAUUSD 는 값을 주지 않음 → Yahoo 금 선물
@@ -39,8 +41,10 @@ type Bar = { date: string; close: number; open: number | null; high: number | nu
 const weekday = (d: string) => { const w = new Date(d + 'T00:00:00Z').getUTCDay(); return w >= 1 && w <= 5; };
 const num = (v: unknown) => (v == null || !(Number(v) > 0) ? null : Math.round(Number(v) * 10000) / 10000);
 
-async function fromYahoo(symbol: string, everyDay = false): Promise<Bar[]> {
-  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10d&interval=1d`, { headers: UA });
+// full = 상장 이후 전체 일봉 (?backfill=PAIR 로 한 번 채울 때)
+async function fromYahoo(symbol: string, everyDay = false, full = false): Promise<Bar[]> {
+  const range = full ? `period1=0&period2=${Math.floor(Date.now() / 1000)}` : 'range=10d';
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${range}&interval=1d`, { headers: UA });
   if (!r.ok) throw new Error(`Yahoo ${symbol} HTTP ${r.status}`);
   const res = (await r.json())?.chart?.result?.[0];
   const ts: number[] = res?.timestamp || [];
@@ -67,6 +71,8 @@ function nyNow() {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  // ?backfill=PAIR → 그 지표만 Yahoo 전체 기간을 받아 채우고 끝 (새 지표 추가 시 한 번)
+  const backfill = new URL(req.url).searchParams.get('backfill');
 
   // 1순위: Google 시트 (게시한 CSV)
   const g = new Map<string, number>();
@@ -86,10 +92,10 @@ Deno.serve(async (req) => {
 
   const ny = nyNow();
   const result: Record<string, unknown> = {};
-  for (const s of SERIES) {
+  for (const s of SERIES.filter((x) => !backfill || x.pair === backfill)) {
     try {
       let bars: Bar[] = [], yErr = '';
-      try { bars = await fromYahoo(s.yahoo, !!s.everyDay); } catch (e) { yErr = (e as Error).message; }
+      try { bars = await fromYahoo(s.yahoo, !!s.everyDay, !!backfill); } catch (e) { yErr = (e as Error).message; }
       // Google 값 = 오늘(가장 최근 거래일) 종가. 날짜는 Yahoo 의 최근 거래일, Yahoo 가 없으면 뉴욕 날짜(평일·장 시작 후)
       const gv = s.google ? ([] as string[]).concat(s.google).map((t) => g.get(t)).find((v) => v) : undefined; // 후보 중 값이 있는 첫 번째
       if (gv) {
@@ -115,6 +121,7 @@ Deno.serve(async (req) => {
       result[s.pair] = { ok: false, message: (e as Error).message };
     }
   }
+  if (backfill) return json({ ok: true, backfill, result: Object.fromEntries(Object.entries(result).map(([k, v]) => [k, { ...(v as object), saved: ((v as { saved?: string[] }).saved || []).length }])) });
   // ---- Yahoo 가 아닌 출처 (Google Finance 에 없는 지표) ----
   const save = async (pair: string, list: { date: string; close: number }[], source: string) => {
     const rows = list.filter((r) => r.close != null && Number.isFinite(r.close))
