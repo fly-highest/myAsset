@@ -429,3 +429,5 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .strat-todo { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: #f3f7ff; border: 1px solid #c9d8f7; font-size: 13.5px; }
 .strat-todo ul { margin: 6px 0 4px; padding-left: 18px; }
 .strat-todo li { margin: 2px 0; }
+.strat td.right { text-align: right; }
+.strat .since { font-weight: 400; margin-right: 6px; }

@@ -122,7 +122,7 @@
     const f = fast === 1 ? rows.map(r => r.close) : smaOf(rows, fast), s = smaOf(rows, slow);
     const diffs = rows.map((r, i) => (f[i] != null && s[i] ? (f[i] / s[i] - 1) * 100 : null));
     const last = rows.length - 1, d = diffs[last];
-    return { fast: f[last], slow: s[last], diff: d, raw: d > 1 ? 'up' : d < -1 ? 'down' : null, ...hysteresis(rows, diffs) };
+    return { fast: f[last], slow: s[last], diff: d, asOf: rows[last].updated_at, raw: d > 1 ? 'up' : d < -1 ? 'down' : null, ...hysteresis(rows, diffs) };
   }
   function strategySignals(sig, hist) {
     // QQQ: 지금 값은 최신 현재가 vs 200일선(indicators), 직전 상태는 일별 종가(fx_daily)로 계산
@@ -137,27 +137,29 @@
   }
   function strategyTable(S, { plans, model, conv, cur }) {
     const pct = v => (v == null ? '—' : `<span class="${Fmt.cls(v, 'PCT')}">${Fmt.pct(v)}</span>`);
-    const since = d => (d ? `<div class="sub muted">${d === '오늘' ? '오늘부터' : esc(d) + '부터'}</div>` : '');
+    // 상태 시작일 · 마지막 확인 시각 (현재·적용 중 줄의 오른쪽 끝, 표시 왼쪽)
+    const since = (d, at) => `<span class="since small muted">${d ? (d === '오늘' ? '오늘' : esc(d)) + '부터' : ''}${at ? ` · ${Fmt.mdhm(at)} 확인` : ''}</span>`;
     const planName = id => { const p = plans.find(x => x.id === id); return p ? `'${esc(p.name)}'` : '해당 기준'; };
     // 한 전략 = 조건 여러 줄. 지금 조건에 해당하는 줄(nowKey)에 '현재', ±1% 사이일 때는 직전 상태 줄(applyKey)에 '적용 중'
-    const block = (name, ind, from, conds, nowKey, applyKey) => conds.map((c, i) => {
+    const block = (name, ind, [from, at], conds, nowKey, applyKey) => conds.map((c, i) => {
       const now = c.key === nowKey, apply = !!applyKey && c.key === applyKey;
       return `<tr class="${now || apply ? 'active-plan' : ''}">
-        ${i === 0 ? `<td rowspan="${conds.length}" class="nowrap sticky-col"><b>${name}</b>${since(from)}</td><td rowspan="${conds.length}" class="small nowrap">${ind}</td>` : ''}
+        ${i === 0 ? `<td rowspan="${conds.length}" class="nowrap sticky-col"><b>${name}</b></td><td rowspan="${conds.length}" class="small nowrap">${ind}</td>` : ''}
         <td>${c.when}</td><td>${c.act}</td>
-        <td class="nowrap">${now ? '<span class="tag tag-active">현재</span>' : ''}${apply ? '<span class="tag tag-active">적용 중</span>' : ''}</td></tr>`;
+        <td class="nowrap right">${now && !applyKey || apply ? since(from, at) : ''}${now ? '<span class="tag tag-active">현재</span>' : ''}${apply ? '<span class="tag tag-active">적용 중</span>' : ''}</td></tr>`;
     }).join('');
     const q = S.qqq, g = S.gold, f = S.ief, none = '<span class="muted">자료 없음</span>';
     // 금: 금 추세(20/120일선) × IEF(100일선) → 전부 보유 / 절반 보유 / 전부 매도
     const goldKey = (gs, fs) => (gs === 'down' ? 'sell' : gs === 'up' && fs ? (fs === 'up' ? 'full' : 'half') : null);
     const gRaw = g && f ? goldKey(g.raw, f.raw) : null, gEff = g && f ? goldKey(g.state, f.state) : null;
     const gFrom = !gEff ? null : gEff === 'sell' ? g.since : [g.since, f.since].sort().pop();
+    const gAt = g && f ? [g.asOf, f.asOf].filter(Boolean).sort()[0] : null; // 두 지표 중 더 오래된 갱신 시각
     const rows = [
-      block('QQQ 200일선 — 자산 비중', q ? `QQQ ${Fmt.usd(q.fast)} <span class="muted">(${Fmt.mdhm(q.asOf)})</span><br>200일선 ${Fmt.usd(q.slow)}<br>차이 ${pct(q.diff)}` : none, q && q.since, [
+      block('QQQ 200일선 — 자산 비중', q ? `QQQ ${Fmt.usd(q.fast)} <span class="muted">(${Fmt.mdhm(q.asOf)})</span><br>200일선 ${Fmt.usd(q.slow)}<br>차이 ${pct(q.diff)}` : none, [q && q.since, q && q.asOf], [
         { key: 'up', when: 'QQQ가 200일선보다 <b>1% 넘게 위</b>', act: `${planName('tgt-above')} 목표 비중으로 맞춤` },
         { key: 'down', when: 'QQQ가 200일선보다 <b>1% 넘게 아래</b>', act: `${planName('tgt-below')} 목표 비중으로 맞춤` },
         { key: 'mid', when: '그 사이 (±1% 이내)', act: '직전 기준 유지' }], q ? q.raw || 'mid' : null, q && !q.raw ? q.state : null),
-      block('금(GLD) 매매 — 살까? · 얼마나?', g && f ? `GLD 20일선 ${Fmt.usd(g.fast)} · 120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}<br>IEF ${Fmt.usd(f.fast)} · 100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, gFrom, [
+      block('금(GLD) 매매 — 살까? · 얼마나?', g && f ? `GLD 20일선 ${Fmt.usd(g.fast)} · 120일선 ${Fmt.usd(g.slow)}<br>차이 ${pct(g.diff)}<br>IEF ${Fmt.usd(f.fast)} · 100일선 ${Fmt.usd(f.slow)}<br>차이 ${pct(f.diff)}` : none, [gFrom, gAt], [
         { key: 'full', when: 'GLD 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 위</b>', act: '<b class="pos">GLD를 삽니다</b> · 🟢 금 목표 비중의 <b>100%</b>' },
         { key: 'half', when: 'GLD 20일선이 120일선보다 <b>1% 넘게 위</b> · IEF가 100일선보다 <b>1% 넘게 아래</b>', act: '<b class="pos">GLD를 삽니다</b> · 🟡 금 목표 비중의 <b>50%</b>만' },
         { key: 'sell', when: 'GLD 20일선이 120일선보다 <b>1% 넘게 아래</b> (IEF 상관없음)', act: '<b class="neg">GLD를 전부 팝니다</b>' },
