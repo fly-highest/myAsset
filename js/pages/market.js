@@ -148,7 +148,13 @@
   const bufTxt = m => String(bufPct(m));
   const bufSigned = (m, sign) => (sign > 0 ? '+' : '−') + bufTxt(m) + '%';
   const BUF_KEY = id => 'myAsset.market.buffer.' + id;
-  function bufOn(m) { try { return localStorage.getItem(BUF_KEY(m.id)) === '1'; } catch (e) { return false; } }
+  // 버퍼 표시 옵션 (차트마다, [⚙ 설정]의 '버퍼 표시옵션 표시'): 꺼 두면 차트 위 '±N% 버퍼' 체크박스가 없어지고 버퍼도 적용 안 함
+  //   정한 적 없으면 지금 버퍼를 켜 둔 차트만 표시
+  const BUFS_KEY = id => 'myAsset.market.bufferShow.' + id;
+  const bufRaw = m => { try { return localStorage.getItem(BUF_KEY(m.id)) === '1'; } catch (e) { return false; } };
+  function bufShown(m) { try { const s = localStorage.getItem(BUFS_KEY(m.id)); return s == null ? bufRaw(m) : s === '1'; } catch (e) { return false; } }
+  const saveBufShown = (m, on) => { try { localStorage.setItem(BUFS_KEY(m.id), on ? '1' : '0'); } catch (e) { /* 무시 */ } };
+  const bufOn = m => bufShown(m) && bufRaw(m);
   const saveBuf = (m, on) => { try { on ? localStorage.setItem(BUF_KEY(m.id), '1') : localStorage.removeItem(BUF_KEY(m.id)); } catch (e) { /* 무시 */ } };
   const bufAt = (v, sign, m) => (v == null ? null : v + sign * Math.abs(v) * bufPct(m) / 100);
 
@@ -203,7 +209,7 @@
   // 이동평균 체크박스: 차트 오른쪽 위에 작게 고정
   function maPicker(m, sel) {
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
-    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><label class="ma-pick ma-buf" title="체크하면 이동평균마다 ±${bufTxt(m)}% 점선을 그리고, ${bufTxt(m)}% 넘게 벗어날 때만 빨간 테두리가 됩니다 · % 는 [⚙ 설정]에서 바꿈"><input type="checkbox" data-buf ${bufOn(m) ? 'checked' : ''}>±${bufTxt(m)}% 버퍼</label><span class="ma-title">이동평균</span>
+    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button>${!bufShown(m) ? '' : `<label class="ma-pick ma-buf" title="체크하면 이동평균마다 ±${bufTxt(m)}% 점선을 그리고, ${bufTxt(m)}% 넘게 벗어날 때만 빨간 테두리가 됩니다 · % 는 [⚙ 설정]에서 바꿈"><input type="checkbox" data-buf ${bufOn(m) ? 'checked' : ''}>±${bufTxt(m)}% 버퍼</label>`}<span class="ma-title">이동평균</span>
       ${maOpts(m).filter(([k]) => sel.includes(k)).map(([k, l, , c]) => box(k, l, c)).join('')}
       ${m.band && sel.includes('band') ? box('band', '200일 ±1%', BAND) : ''}${sel.length ? '' : '<span class="muted">없음</span>'}</div>`;
   }
@@ -247,7 +253,7 @@
         <div class="field"><label>버퍼 %</label>
           <div class="toolbar">
             <span>±</span><input type="text" id="ma-bufp" inputmode="decimal" value="${bufTxt(m)}" style="width:80px" autocomplete="off" title="0.1 ~ 50 (소수점 가능, 예: 0.5)"><span>%</span>
-            <label class="check" title="체크하고 [적용]을 누르면 버퍼를 켭니다. 체크하지 않으면 차트 위 '±% 버퍼' 체크 상태를 그대로 둡니다"><input type="checkbox" id="ma-bufon"> 버퍼 켜기</label>
+            <label class="check" title="체크하면 차트 위에 '±N% 버퍼' 체크박스를 보여 줍니다. 체크하지 않으면 그 체크박스를 없애고 버퍼도 적용하지 않습니다"><input type="checkbox" id="ma-bufon" ${bufShown(m) ? 'checked' : ''}> 버퍼 표시옵션 표시</label>
           </div>
           <div class="small muted">이동평균마다 ±이 % 위치에 점선을 그리고, 빨간 테두리도 이 % 넘게 벗어날 때만 켜집니다 (이 차트에만 적용).</div></div>
         <div class="notice" id="ma-err" hidden></div></div>`,
@@ -256,7 +262,7 @@
           const bp = Number(api.body.querySelector('#ma-bufp').value.replace(/[%\s,]/g, ''));
           if (!(bp >= 0.1 && bp <= 50)) return err('버퍼 %는 0.1 ~ 50 사이 숫자로 입력하세요 (예: 0.5).');
           saveBufPct(m, Math.round(bp * 100) / 100);
-          if (api.body.querySelector('#ma-bufon').checked) saveBuf(m, true); // 체크했을 때만 켬 (안 했으면 지금 상태 그대로)
+          saveBufShown(m, api.body.querySelector('#ma-bufon').checked); // 안 하면 차트 위 버퍼 체크박스를 없앰 (켜 둔 상태는 기억, 다시 표시하면 그대로)
           sel =[...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
           saveMaCustom(m, custom);
           saveMaHidden(m, hidden);
@@ -405,7 +411,7 @@
       saveMa(m, next);
       marketPanel(m, pTop);
     });
-    box.querySelector('[data-buf]').onchange = e => { saveBuf(m, e.target.checked); marketPanel(m, pTop); };
+    const bufCb = box.querySelector('[data-buf]'); if (bufCb) bufCb.onchange = e => { saveBuf(m, e.target.checked); marketPanel(m, pTop); };
     box.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => {
       setChartPeriod(m, b.dataset.cp);
       marketPanel(m, pTop);
