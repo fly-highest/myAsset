@@ -369,19 +369,21 @@
 
     const unit = m.everyDay ? '날짜(주말 포함)' : '거래일';
     const firstDate = data.map(d => d.hist[0] && d.hist[0].date).filter(Boolean).sort()[0] || m.since; // 실제로 저장된 가장 오래된 날짜
-    // 버퍼를 켜면: 체크한 이동평균마다 경고 쪽 버퍼선(−1%, alertAbove 지표는 +1%)에서 현재 값이 몇 %, 몇 포인트 떨어져 있는지
-    const bufSide = m.alertAbove ? 1 : -1;
-    const bufInfo = !bufOn(m) ? [] : data.flatMap(({ s, hist, cur }) => (!cur || !hist.length ? [] : maOpts(m).filter(o => sel.includes(o[0])).map(([k, l, , color]) => {
-      const line = bufAt(maValues(hist, k, m)[hist.length - 1], bufSide, m);
+    // 체크한 이동평균마다 현재 값이 기준선에서 몇 %, 몇 포인트 떨어져 있는지
+    //   버퍼를 켜면 경고 쪽 버퍼선(−N%, alertAbove 지표는 +N%), 끄면 이동평균 자체
+    const bufSide = m.alertAbove ? 1 : -1, bOn = bufOn(m);
+    const bufInfo = data.flatMap(({ s, hist, cur }) => (!cur || !hist.length ? [] : maOpts(m).filter(o => sel.includes(o[0])).map(([k, l, , color]) => {
+      const mv = maValues(hist, k, m)[hist.length - 1];
+      const line = bOn ? bufAt(mv, bufSide, m) : mv;
       if (line == null) return '';
-      const d = cur.v - line, r = line ? (d / Math.abs(line)) * 100 : null, hit = m.alertAbove ? d > 0 : d < 0;
-      return `<span class="buf-chip${hit ? ' hit' : ''}"><span class="ma-swatch" style="background:${color}"></span>${m.series.length > 1 ? esc(s.label) + ' ' : ''}${l} ${bufSigned(m, bufSide)} 기준 ${m.fmt(line)} 대비
+      const d = cur.v - line, r = line ? (d / Math.abs(line)) * 100 : null, hit = !m.alertWhen && (m.alertAbove ? d > 0 : d < 0);
+      return `<span class="buf-chip${hit ? ' hit' : ''}"><span class="ma-swatch" style="background:${color}"></span>${m.series.length > 1 ? esc(s.label) + ' ' : ''}${l} ${bOn ? bufSigned(m, bufSide) + ' 기준' : '평균'} ${m.fmt(line)} 대비
         <b class="${Fmt.cls(d, 'PCT')}">${r == null ? '' : Fmt.pct(r) + ' · '}${m.diffAbs ? pp(d) : signed(d) + m.fmt(Math.abs(d))}</b></span>`;
     }))).filter(Boolean);
     box.innerHTML = `<div class="mkt-hd"><h3 class="sec-sub" style="margin:0">${m.title}</h3>
         <div class="seg seg-sm" role="group" aria-label="이 차트의 기간" title="이 차트만 기간을 바꿉니다 (위쪽 기간 버튼을 누르면 모든 차트가 다시 같은 기간)">${CHART_PERIODS.map(([k, l]) => `<button type="button" data-cp="${k}" class="${k === p[0] ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       ${stats}
-      ${bufInfo.length ? `<div class="buf-info"><span class="buf-t">버퍼 기준까지</span>${bufInfo.join('')}</div>` : ''}
+      ${bufInfo.length ? `<div class="buf-info"><span class="buf-t">${bOn ? '버퍼 기준까지' : '이동평균까지'}</span>${bufInfo.join('')}</div>` : ''}
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">${m.quarterly ? `분기 자료 (${firstDate}부터 저장, 분기마다 자동 추가, 날짜 = 분기 마지막 달) · n일 이동평균 = 최근 n개 분기 평균` : m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     // 경고: 현재 값이 체크한 이동평균선(가장 최근 값) 아래이면 카드 테두리를 빨갛게 표시 (alertAbove 지표는 위일 때)
