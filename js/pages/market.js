@@ -139,6 +139,12 @@
   function maWidths(m) { try { const s = JSON.parse(localStorage.getItem(MAW_KEY(m.id))); if (s && typeof s === 'object') return s; } catch (e) { /* 무시 */ } return {}; }
   const saveMaWidths = (m, w) => { try { localStorage.setItem(MAW_KEY(m.id), JSON.stringify(w)); } catch (e) { /* 무시 */ } };
   const maWidth = (m, k, def) => { const v = Number(maWidths(m)[k]); return v >= 1 && v <= 10 ? v : def; };
+  // ±1% 버퍼 (차트마다 체크, 이 브라우저에 기억): 켜면 이동평균마다 ±1% 점선을 그리고,
+  //   깜빡임도 이동평균에서 1% 넘게 벗어날 때만 (값이 음수일 수 있어 |평균|의 1%로 계산)
+  const BUF_KEY = id => 'myAsset.market.buffer.' + id;
+  function bufOn(m) { try { return localStorage.getItem(BUF_KEY(m.id)) === '1'; } catch (e) { return false; } }
+  const saveBuf = (m, on) => { try { on ? localStorage.setItem(BUF_KEY(m.id), '1') : localStorage.removeItem(BUF_KEY(m.id)); } catch (e) { /* 무시 */ } };
+  const bufAt = (v, sign) => (v == null ? null : v + sign * Math.abs(v) * 0.01);
 
   // n개 단순 이동평균. 앞쪽에 n개가 안 되는 날은 null
   const smaN = (hist, n) => { let sum = 0; return hist.map((r, i) => { sum += r.close; if (i >= n) sum -= hist[i - n].close; return i >= n - 1 ? sum / n : null; }); };
@@ -191,7 +197,7 @@
   // 이동평균 체크박스: 차트 오른쪽 위에 작게 고정
   function maPicker(m, sel) {
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
-    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><span class="ma-title">이동평균</span>
+    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><label class="ma-pick ma-buf" title="체크하면 이동평균마다 ±1% 점선을 그리고, 1% 넘게 벗어날 때만 깜빡입니다"><input type="checkbox" data-buf ${bufOn(m) ? 'checked' : ''}>±1% 버퍼</label><span class="ma-title">이동평균</span>
       ${maOpts(m).filter(([k]) => sel.includes(k)).map(([k, l, , c]) => box(k, l, c)).join('')}
       ${m.band && sel.includes('band') ? box('band', '200일 ±1%', BAND) : ''}${sel.length ? '' : '<span class="muted">없음</span>'}</div>`;
   }
@@ -353,13 +359,15 @@
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">${m.quarterly ? `분기 자료 (${firstDate}부터 저장, 분기마다 자동 추가, 날짜 = 분기 마지막 달) · n일 이동평균 = 최근 n개 분기 평균` : m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     // 경고: 현재 값이 체크한 이동평균선(가장 최근 값) 아래이면 카드 테두리를 빨갛게 깜빡임 (alertAbove 지표는 위일 때)
-    const below = [];
+    //   ±1% 버퍼를 켜면 이동평균 −1%(alertAbove 지표는 +1%) 선을 넘을 때만
+    const below = [], buf = bufOn(m);
     data.forEach(({ s, hist, cur }) => {
       if (!cur || !hist.length) return;
       if (m.alertWhen) { const msg = m.alertWhen(cur.v); if (msg) below.push(msg); return; } // 이동평균 대신 정해진 조건으로만 깜빡임
       maOpts(m).filter(o => sel.includes(o[0])).forEach(([k, l]) => {
-        const v = maValues(hist, k, m)[hist.length - 1];
-        if (v != null && (m.alertAbove ? cur.v > v : cur.v < v)) below.push(`${m.series.length > 1 ? s.label + ' ' : ''}현재 ${m.fmt(cur.v)} ${m.alertAbove ? '>' : '<'} ${l} 평균 ${m.fmt(v)}`);
+        const v0 = maValues(hist, k, m)[hist.length - 1];
+        const v = buf ? bufAt(v0, m.alertAbove ? 1 : -1) : v0;
+        if (v != null && (m.alertAbove ? cur.v > v : cur.v < v)) below.push(`${m.series.length > 1 ? s.label + ' ' : ''}현재 ${m.fmt(cur.v)} ${m.alertAbove ? '>' : '<'} ${l} 평균${buf ? (m.alertAbove ? ' +1%' : ' −1%') : ''} ${m.fmt(v)}`);
       });
     });
     box.classList.toggle('ma-below', below.length > 0);
@@ -369,6 +377,7 @@
       saveMa(m, next);
       marketPanel(m, pTop);
     });
+    box.querySelector('[data-buf]').onchange = e => { saveBuf(m, e.target.checked); marketPanel(m, pTop); };
     box.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => {
       setChartPeriod(m, b.dataset.cp);
       marketPanel(m, pTop);
@@ -387,8 +396,12 @@
       if (c.hiRow && c.loRow) datasets.push({ label: '', data: labels.map(d => (d === c.hiRow.date ? c.hiRow.close : d === c.loRow.date ? c.loRow.close : null)), showLine: false,
         pointRadius: 4, pointHoverRadius: 4, pointBackgroundColor: '#fff', pointBorderColor: s.color, pointBorderWidth: 2, extremes: { hi: c.hiRow, lo: c.loRow, multi: m.series.length > 1 ? s.label + ' ' : '' } });
       maOpts(m).filter(o => sel.includes(o[0])).forEach(([k, l, , color]) => {
-        datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, maValues(hist, k, m)), borderColor: color, borderWidth: maWidth(m, k, 1.4),
+        const mv = maValues(hist, k, m);
+        datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, mv), borderColor: color, borderWidth: maWidth(m, k, 1.4),
           borderDash: si > 0 ? [2, 3] : (k[0] === 'y' ? [6, 4] : []), pointRadius: 0, tension: 0.1, spanGaps: true });
+        // ±1% 버퍼 점선 (같은 색, 가늘게). 범례에는 넣지 않고 툴팁에만 보임
+        if (buf) [['+1%', 1], ['−1%', -1]].forEach(([t, sg]) => datasets.push({ label: '', bufLabel: `${multi ? s.label + ' ' : ''}${l} ${t}`, data: onLabels(hist, mv.map(v => bufAt(v, sg))),
+          borderColor: color + '99', borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
       });
       if (m.band && sel.includes('band')) {
         const m200 = smaN(hist, 200);
@@ -405,7 +418,7 @@
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2, filter: it => it.text !== '' } },
-          tooltip: { callbacks: { label: ctx => (ctx.parsed.y == null || !ctx.dataset.label ? null : `${ctx.dataset.label}: ${m.fmt(ctx.parsed.y)}`) } }
+          tooltip: { callbacks: { label: ctx => { const n = ctx.dataset.label || ctx.dataset.bufLabel; return ctx.parsed.y == null || !n ? null : `${n}: ${m.fmt(ctx.parsed.y)}`; } } }
         },
         scales: {
           x: { ticks: { maxTicksLimit: 8, callback: function (v) { const d = this.getLabelForValue(v); return labels.length > 400 || m.monthly ? d.slice(0, 7) : Fmt.md(d); } }, grid: { display: false } },
