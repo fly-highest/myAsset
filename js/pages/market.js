@@ -139,12 +139,18 @@
   function maWidths(m) { try { const s = JSON.parse(localStorage.getItem(MAW_KEY(m.id))); if (s && typeof s === 'object') return s; } catch (e) { /* 무시 */ } return {}; }
   const saveMaWidths = (m, w) => { try { localStorage.setItem(MAW_KEY(m.id), JSON.stringify(w)); } catch (e) { /* 무시 */ } };
   const maWidth = (m, k, def) => { const v = Number(maWidths(m)[k]); return v >= 1 && v <= 10 ? v : def; };
-  // ±1% 버퍼 (차트마다 체크, 이 브라우저에 기억): 켜면 이동평균마다 ±1% 점선을 그리고,
-  //   빨간 테두리도 이동평균에서 1% 넘게 벗어날 때만 (값이 음수일 수 있어 |평균|의 1%로 계산)
+  // ±N% 버퍼 (차트마다 체크, 이 브라우저에 기억): 켜면 이동평균마다 ±N% 점선을 그리고,
+  //   빨간 테두리도 이동평균에서 N% 넘게 벗어날 때만 (값이 음수일 수 있어 |평균|의 N%로 계산)
+  //   N은 [⚙ 설정]에서 차트마다 정함 (0.1~50, 기본 1)
+  const BUFP_KEY = id => 'myAsset.market.bufferPct.' + id;
+  function bufPct(m) { try { const v = Number(localStorage.getItem(BUFP_KEY(m.id))); return v >= 0.1 && v <= 50 ? v : 1; } catch (e) { return 1; } }
+  const saveBufPct = (m, v) => { try { v === 1 ? localStorage.removeItem(BUFP_KEY(m.id)) : localStorage.setItem(BUFP_KEY(m.id), String(v)); } catch (e) { /* 무시 */ } };
+  const bufTxt = m => String(bufPct(m));
+  const bufSigned = (m, sign) => (sign > 0 ? '+' : '−') + bufTxt(m) + '%';
   const BUF_KEY = id => 'myAsset.market.buffer.' + id;
   function bufOn(m) { try { return localStorage.getItem(BUF_KEY(m.id)) === '1'; } catch (e) { return false; } }
   const saveBuf = (m, on) => { try { on ? localStorage.setItem(BUF_KEY(m.id), '1') : localStorage.removeItem(BUF_KEY(m.id)); } catch (e) { /* 무시 */ } };
-  const bufAt = (v, sign) => (v == null ? null : v + sign * Math.abs(v) * 0.01);
+  const bufAt = (v, sign, m) => (v == null ? null : v + sign * Math.abs(v) * bufPct(m) / 100);
 
   // n개 단순 이동평균. 앞쪽에 n개가 안 되는 날은 null
   const smaN = (hist, n) => { let sum = 0; return hist.map((r, i) => { sum += r.close; if (i >= n) sum -= hist[i - n].close; return i >= n - 1 ? sum / n : null; }); };
@@ -197,7 +203,7 @@
   // 이동평균 체크박스: 차트 오른쪽 위에 작게 고정
   function maPicker(m, sel) {
     const box = (key, label, color) => `<label class="ma-pick"><input type="checkbox" data-ma="${key}" ${sel.includes(key) ? 'checked' : ''}><span class="ma-swatch" style="background:${color}"></span>${label}</label>`;
-    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><label class="ma-pick ma-buf" title="체크하면 이동평균마다 ±1% 점선을 그리고, 1% 넘게 벗어날 때만 빨간 테두리가 됩니다"><input type="checkbox" data-buf ${bufOn(m) ? 'checked' : ''}>±1% 버퍼</label><span class="ma-title">이동평균</span>
+    return `<div class="ma-picks"><button type="button" class="ma-cfg" data-ma-cfg title="이동평균 종류 고르기 · 원하는 기간과 색으로 추가">⚙ 설정</button><label class="ma-pick ma-buf" title="체크하면 이동평균마다 ±${bufTxt(m)}% 점선을 그리고, ${bufTxt(m)}% 넘게 벗어날 때만 빨간 테두리가 됩니다 · % 는 [⚙ 설정]에서 바꿈"><input type="checkbox" data-buf ${bufOn(m) ? 'checked' : ''}>±${bufTxt(m)}% 버퍼</label><span class="ma-title">이동평균</span>
       ${maOpts(m).filter(([k]) => sel.includes(k)).map(([k, l, , c]) => box(k, l, c)).join('')}
       ${m.band && sel.includes('band') ? box('band', '200일 ±1%', BAND) : ''}${sel.length ? '' : '<span class="muted">없음</span>'}</div>`;
   }
@@ -238,10 +244,20 @@
             <input type="color" id="ma-cp" value="${color0}" title="색 고르기" style="width:36px;height:32px;padding:0;border:0;background:none">
             <button type="button" class="btn btn-sm btn-primary" id="ma-add">추가</button>
           </div></div>
+        <div class="field"><label>버퍼 %</label>
+          <div class="toolbar">
+            <span>±</span><input type="text" id="ma-bufp" inputmode="decimal" value="${bufTxt(m)}" style="width:80px" autocomplete="off" title="0.1 ~ 50 (소수점 가능, 예: 0.5)"><span>%</span>
+            <label class="check"><input type="checkbox" id="ma-bufon" ${bufOn(m) ? 'checked' : ''}> 버퍼 켜기</label>
+          </div>
+          <div class="small muted">이동평균마다 ±이 % 위치에 점선을 그리고, 빨간 테두리도 이 % 넘게 벗어날 때만 켜집니다 (이 차트에만 적용).</div></div>
         <div class="notice" id="ma-err" hidden></div></div>`,
       buttons: [{ label: '취소' }, {
         label: '적용', kind: 'primary', onClick: api => {
-          sel = [...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
+          const bp = Number(api.body.querySelector('#ma-bufp').value.replace(/[%\s,]/g, ''));
+          if (!(bp >= 0.1 && bp <= 50)) return err('버퍼 %는 0.1 ~ 50 사이 숫자로 입력하세요 (예: 0.5).');
+          saveBufPct(m, Math.round(bp * 100) / 100);
+          saveBuf(m, api.body.querySelector('#ma-bufon').checked);
+          sel =[...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
           saveMaCustom(m, custom);
           saveMaHidden(m, hidden);
           saveMa(m, sel);
@@ -353,13 +369,13 @@
 
     const unit = m.everyDay ? '날짜(주말 포함)' : '거래일';
     const firstDate = data.map(d => d.hist[0] && d.hist[0].date).filter(Boolean).sort()[0] || m.since; // 실제로 저장된 가장 오래된 날짜
-    // ±1% 버퍼를 켜면: 체크한 이동평균마다 경고 쪽 버퍼선(−1%, alertAbove 지표는 +1%)에서 현재 값이 몇 %, 몇 포인트 떨어져 있는지
+    // 버퍼를 켜면: 체크한 이동평균마다 경고 쪽 버퍼선(−1%, alertAbove 지표는 +1%)에서 현재 값이 몇 %, 몇 포인트 떨어져 있는지
     const bufSide = m.alertAbove ? 1 : -1;
     const bufInfo = !bufOn(m) ? [] : data.flatMap(({ s, hist, cur }) => (!cur || !hist.length ? [] : maOpts(m).filter(o => sel.includes(o[0])).map(([k, l, , color]) => {
-      const line = bufAt(maValues(hist, k, m)[hist.length - 1], bufSide);
+      const line = bufAt(maValues(hist, k, m)[hist.length - 1], bufSide, m);
       if (line == null) return '';
       const d = cur.v - line, r = line ? (d / Math.abs(line)) * 100 : null, hit = m.alertAbove ? d > 0 : d < 0;
-      return `<span class="buf-chip${hit ? ' hit' : ''}"><span class="ma-swatch" style="background:${color}"></span>${m.series.length > 1 ? esc(s.label) + ' ' : ''}${l} ${bufSide > 0 ? '+1%' : '−1%'} 기준 ${m.fmt(line)} 대비
+      return `<span class="buf-chip${hit ? ' hit' : ''}"><span class="ma-swatch" style="background:${color}"></span>${m.series.length > 1 ? esc(s.label) + ' ' : ''}${l} ${bufSigned(m, bufSide)} 기준 ${m.fmt(line)} 대비
         <b class="${Fmt.cls(d, 'PCT')}">${r == null ? '' : Fmt.pct(r) + ' · '}${m.diffAbs ? pp(d) : signed(d) + m.fmt(Math.abs(d))}</b></span>`;
     }))).filter(Boolean);
     box.innerHTML = `<div class="mkt-hd"><h3 class="sec-sub" style="margin:0">${m.title}</h3>
@@ -369,15 +385,15 @@
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">${m.quarterly ? `분기 자료 (${firstDate}부터 저장, 분기마다 자동 추가, 날짜 = 분기 마지막 달) · n일 이동평균 = 최근 n개 분기 평균` : m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
     // 경고: 현재 값이 체크한 이동평균선(가장 최근 값) 아래이면 카드 테두리를 빨갛게 표시 (alertAbove 지표는 위일 때)
-    //   ±1% 버퍼를 켜면 이동평균 −1%(alertAbove 지표는 +1%) 선을 넘을 때만
+    //   버퍼를 켜면 이동평균 −N%(alertAbove 지표는 +N%) 선을 넘을 때만
     const below = [], buf = bufOn(m);
     data.forEach(({ s, hist, cur }) => {
       if (!cur || !hist.length) return;
       if (m.alertWhen) { const msg = m.alertWhen(cur.v); if (msg) below.push(msg); return; } // 이동평균 대신 정해진 조건으로만 빨간 테두리
       maOpts(m).filter(o => sel.includes(o[0])).forEach(([k, l]) => {
         const v0 = maValues(hist, k, m)[hist.length - 1];
-        const v = buf ? bufAt(v0, m.alertAbove ? 1 : -1) : v0;
-        if (v != null && (m.alertAbove ? cur.v > v : cur.v < v)) below.push(`${m.series.length > 1 ? s.label + ' ' : ''}현재 ${m.fmt(cur.v)} ${m.alertAbove ? '>' : '<'} ${l} 평균${buf ? (m.alertAbove ? ' +1%' : ' −1%') : ''} ${m.fmt(v)}`);
+        const v = buf ? bufAt(v0, m.alertAbove ? 1 : -1, m) : v0;
+        if (v != null && (m.alertAbove ? cur.v > v : cur.v < v)) below.push(`${m.series.length > 1 ? s.label + ' ' : ''}현재 ${m.fmt(cur.v)} ${m.alertAbove ? '>' : '<'} ${l} 평균${buf ? ' ' + bufSigned(m, m.alertAbove ? 1 : -1) : ''} ${m.fmt(v)}`);
       });
     });
     box.classList.toggle('ma-below', below.length > 0);
@@ -409,8 +425,8 @@
         const mv = maValues(hist, k, m);
         datasets.push({ label: `${multi ? s.label + ' ' : ''}${l} 평균`, data: onLabels(hist, mv), borderColor: color, borderWidth: maWidth(m, k, 1.4),
           borderDash: si > 0 ? [2, 3] : (k[0] === 'y' ? [6, 4] : []), pointRadius: 0, tension: 0.1, spanGaps: true });
-        // ±1% 버퍼 점선 (같은 색, 가늘게). 범례에는 넣지 않고 툴팁에만 보임
-        if (buf) [['+1%', 1], ['−1%', -1]].forEach(([t, sg]) => datasets.push({ label: '', bufLabel: `${multi ? s.label + ' ' : ''}${l} ${t}`, data: onLabels(hist, mv.map(v => bufAt(v, sg))),
+        // 버퍼 점선 (같은 색, 가늘게). 범례에는 넣지 않고 툴팁에만 보임
+        if (buf) [[bufSigned(m, 1), 1], [bufSigned(m, -1), -1]].forEach(([t, sg]) => datasets.push({ label: '', bufLabel: `${multi ? s.label + ' ' : ''}${l} ${t}`, data: onLabels(hist, mv.map(v => bufAt(v, sg, m))),
           borderColor: color + '99', borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: 0.1, spanGaps: true }));
       });
       if (m.band && sel.includes('band')) {
