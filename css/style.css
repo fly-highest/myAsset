@@ -360,10 +360,8 @@ textarea:focus { outline: 2px solid #b8c9f7; border-color: var(--primary); }
 .fx-stats .grade { font-size: 0.6em; font-weight: 600; color: var(--muted, #6b7280); margin-left: 4px; }
 @media (max-width: 700px) { .fx-stats { grid-template-columns: 1fr; } }
 .mkt-card { margin-bottom: 14px; }
-/* 현재 값이 체크한 이동평균선 아래 → 카드 테두리 빨강 1초 주기 깜빡임 */
-.mkt-card.ma-below { animation: ma-below-blink 1s step-end infinite; }
-@keyframes ma-below-blink { 0% { border-color: #dc2626; box-shadow: 0 0 0 2px #dc2626; } 50% { border-color: var(--line); box-shadow: var(--shadow); } }
-@media (prefers-reduced-motion: reduce) { .mkt-card.ma-below { animation: none; border-color: #dc2626; box-shadow: 0 0 0 2px #dc2626; } }
+/* 현재 값이 체크한 이동평균선 아래 → 카드 테두리 빨강 (깜빡임 없이 고정) */
+.mkt-card.ma-below { border-color: #dc2626; box-shadow: 0 0 0 2px #dc2626; }
 .fx-stats.four { grid-template-columns: repeat(4, 1fr); } @media (max-width: 900px) { .fx-stats.four { grid-template-columns: repeat(2, 1fr); } }
 .fx-stats.five { grid-template-columns: repeat(5, 1fr); } @media (max-width: 1100px) { .fx-stats.five { grid-template-columns: repeat(3, 1fr); } } @media (max-width: 700px) { .fx-stats.five { grid-template-columns: 1fr 1fr; } }
 /* 시장 지표: 이동평균 체크박스 */
