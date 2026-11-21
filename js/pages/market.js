@@ -36,7 +36,7 @@
     { id: 'btc', sma: true, everyDay: true, title: '비트코인 (BTC/USD)', fmt: usd, tick: usdTick, since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'BTC', label: 'BTC', color: PRICE }] },
     // VIX: 미국 S&P500 옵션으로 계산한 '공포 지수' (변동성). 단위 없음 — 위쪽 칸은 현재 · 기간 평균
-    // alertAbove: 경고 빨간 테두리을 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX · 달러 인덱스 · 유가 · 금리 · 김치 프리미엄은 오를수록 부담)
+    // alertAbove: 빨간 테두리 경고를 반대로 — 현재 값이 이동평균선 '위'일 때 (VIX · 달러 인덱스 · 유가 · 금리 · 김치 프리미엄은 오를수록 부담)
     { id: 'vix', alertAbove: true, title: 'VIX (CBOE 변동성 지수)', fmt: dec2, tick: v => Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['n50', 'n200'],
       series: [{ pair: 'VIX', label: 'VIX', color: PRICE }] },
     { id: 'fx', title: 'USD/KRW 환율', fmt: fx2, tick: v => '₩' + Number(v).toLocaleString('ko-KR'), since: '2016-10-10', ma: ['y1'],
@@ -358,7 +358,7 @@
       ${stats}
       <div class="chart-box ma-chart" style="height:300px">${maPicker(m, sel)}<canvas id="ch-${m.id}"></canvas></div>
       <p class="small muted" style="margin:6px 0 0">${m.quarterly ? `분기 자료 (${firstDate}부터 저장, 분기마다 자동 추가, 날짜 = 분기 마지막 달) · n일 이동평균 = 최근 n개 분기 평균` : m.monthly ? `월간 자료 (${firstDate}부터 저장, 매달 자동 추가) · n일 이동평균 = 최근 n개월 평균` : `일별 종가 (${firstDate}부터 저장, ${m.everyDay ? '매일' : '평일마다'} 자동 추가) · n일 = 최근 n${m.everyDay ? '일' : '거래일'} 평균 (${unit} 기준)`} · 1년·3년·5년 = 날짜마다 그 날부터 그 기간 전까지의 평균 · 자료가 기간보다 짧은 날은 그리지 않음${m.series.length > 1 ? `· ${m.series[1].label} 이동평균은 짧은 점선` : ''}${m.zero ? ' · 회색 점선 = 0' : ''}</p>`;
-    // 경고: 현재 값이 체크한 이동평균선(가장 최근 값) 아래이면 카드 테두리를 빨갛게 빨간 테두리 (alertAbove 지표는 위일 때)
+    // 경고: 현재 값이 체크한 이동평균선(가장 최근 값) 아래이면 카드 테두리를 빨갛게 표시 (alertAbove 지표는 위일 때)
     //   ±1% 버퍼를 켜면 이동평균 −1%(alertAbove 지표는 +1%) 선을 넘을 때만
     const below = [], buf = bufOn(m);
     data.forEach(({ s, hist, cur }) => {
