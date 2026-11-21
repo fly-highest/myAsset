@@ -247,7 +247,7 @@
         <div class="field"><label>버퍼 %</label>
           <div class="toolbar">
             <span>±</span><input type="text" id="ma-bufp" inputmode="decimal" value="${bufTxt(m)}" style="width:80px" autocomplete="off" title="0.1 ~ 50 (소수점 가능, 예: 0.5)"><span>%</span>
-            <label class="check"><input type="checkbox" id="ma-bufon" ${bufOn(m) ? 'checked' : ''}> 버퍼 켜기</label>
+            <label class="check" title="체크하고 [적용]을 누르면 버퍼를 켭니다. 체크하지 않으면 차트 위 '±% 버퍼' 체크 상태를 그대로 둡니다"><input type="checkbox" id="ma-bufon"> 버퍼 켜기</label>
           </div>
           <div class="small muted">이동평균마다 ±이 % 위치에 점선을 그리고, 빨간 테두리도 이 % 넘게 벗어날 때만 켜집니다 (이 차트에만 적용).</div></div>
         <div class="notice" id="ma-err" hidden></div></div>`,
@@ -256,7 +256,7 @@
           const bp = Number(api.body.querySelector('#ma-bufp').value.replace(/[%\s,]/g, ''));
           if (!(bp >= 0.1 && bp <= 50)) return err('버퍼 %는 0.1 ~ 50 사이 숫자로 입력하세요 (예: 0.5).');
           saveBufPct(m, Math.round(bp * 100) / 100);
-          saveBuf(m, api.body.querySelector('#ma-bufon').checked);
+          if (api.body.querySelector('#ma-bufon').checked) saveBuf(m, true); // 체크했을 때만 켬 (안 했으면 지금 상태 그대로)
           sel =[...api.body.querySelectorAll('[data-k]:checked')].map(x => x.dataset.k);
           saveMaCustom(m, custom);
           saveMaHidden(m, hidden);
