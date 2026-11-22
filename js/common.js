@@ -80,9 +80,17 @@ window.App = (function () {
           </div>
           ${session ? `<span class="cloud-chip" id="hdr-cloud"></span>` : '<button type="button" class="btn btn-ghost btn-sm" id="btn-reset-mock" title="이 브라우저에 저장된 Mock 변경 내용을 지우고 처음 상태로 되돌립니다">Mock 초기화</button>'}
           ${session ? `<span class="user-chip" title="로그인한 계정">${esc(Auth.toId(session.user.email))}</span><button type="button" class="btn btn-ghost btn-sm" id="btn-logout">로그아웃</button>` : ''}
+          ${window.Theme ? `<button type="button" class="btn btn-sm theme-btn" id="btn-theme"></button>` : ''}
         </div>
       </div>`;
     el.querySelector('#btn-refresh-prices').addEventListener('click', refreshPricesNow);
+    // 나이트 모드 전환 (js/theme.js): 색은 바로 바뀌고, 차트는 다시 그림
+    const tb = el.querySelector('#btn-theme');
+    if (tb) {
+      const label = () => { const d = Theme.isDark(); tb.textContent = d ? '☀ 주간' : '🌙 야간'; tb.title = d ? '밝은 화면으로 전환' : '어두운 화면(나이트 모드)으로 전환 — 불을 껐을 때 눈부심이 적습니다'; };
+      label();
+      tb.addEventListener('click', () => { Theme.toggle(); label(); rerender(); });
+    }
     const lo = el.querySelector('#btn-logout');
     if (lo) lo.addEventListener('click', async () => {
       if (!(await confirm('로그아웃할까요?<br><small>데이터는 서버(Supabase)에 저장되어 있어 다시 로그인하면 그대로 보입니다.</small>', { okLabel: '로그아웃' }))) return;

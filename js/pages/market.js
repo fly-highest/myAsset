@@ -478,7 +478,7 @@
             ctx.save();
             ctx.font = '600 11px sans-serif';
             ctx.textAlign = x > a.right - 110 ? 'right' : x < a.left + 110 ? 'left' : 'center';
-            ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.fillStyle = k === 'hi' ? '#dc2626' : '#2457d6';
+            ctx.lineWidth = 3; ctx.strokeStyle = window.Theme ? Theme.c('#fff') : '#fff'; ctx.fillStyle = (window.Theme ? Theme.c : x => x)(k === 'hi' ? '#dc2626' : '#2457d6', 'text');
             ctx.strokeText(text, x, pt.y + dy); ctx.fillText(text, x, pt.y + dy);
             ctx.restore();
           });

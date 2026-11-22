@@ -420,6 +420,7 @@ window.UI = (function () {
     if (charts[canvasId]) charts[canvasId].destroy();
     const el = document.getElementById(canvasId);
     if (!el || !window.Chart) return null;
+    if (window.Theme) config = Theme.chartConfig(config); // 나이트 모드: 차트 글자·격자 색
     charts[canvasId] = new Chart(el, config);
     return charts[canvasId];
   }
