@@ -1,8 +1,9 @@
 // Dashboard (index.html) — 전체 요약, 조회 전용 (10항)
 (function () {
   async function render() {
-    const { model, status } = await App.loadCurrentModel();
+    const [{ model, status }, st] = await Promise.all([App.loadCurrentModel(), Strategy.load().catch(() => null)]); // 전략 신호 (js/strategy.js)
     const mode = App.mode;
+    const strat = st ? Strategy.table(st.S, { plans: st.plans, model, ...Strategy.money(model), dash: true }) : '';
     const total = model.total.valK;
 
     const accRows = model.accounts.map(acc => {
@@ -19,6 +20,7 @@
         ${UI.totalsCards(model.total, mode, model.fx)}
         <div class="small muted" style="margin-top:6px">비중은 통화 모드와 관계없이 원화 환산 평가금액 기준</div>
       </div>
+      ${strat}
       <div class="sec grid-2">
         <div>
           <div class="sec-hd"><h2>자산군별 요약</h2><a href="groups.html">자산 현황에서 보기 →</a></div>
